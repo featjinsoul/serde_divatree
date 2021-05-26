@@ -14,6 +14,7 @@ enum Node<'a> {
 
 struct A3daTree<'a> {
     tree: Tree<Node<'a>>,
+    curr: NodeId,
 }
 
 impl<'a> A3daTree<'a> {
@@ -50,7 +51,13 @@ impl<'a> A3daTree<'a> {
             }
             tree.get_mut(id).unwrap().append(Node::Value(rhs));
         }
-        Ok(Self { tree })
+        let curr = tree.root_id().unwrap();
+        Ok(Self { tree, curr })
+    }
+    fn print(&self) {
+        let mut str = String::new();
+        self.tree.write_formatted(&mut str).unwrap();
+        println!("{}", str);
     }
 }
 
@@ -77,9 +84,7 @@ camera_root.0.interest.trans.x.key.1.data=(738,-0.522281,3.31402e-006)
     #[test]
     fn new() {
         let tree = A3daTree::new(INPUT).unwrap();
-        let mut str = String::new();
-        tree.tree.write_formatted(&mut str).unwrap();
-        println!("{}", str);
+        tree.print();
         println!("----------- WRITE -------------");
         panic!();
     }
