@@ -351,4 +351,27 @@ welcome = banana";
         let data: Vec<char> = Vec::deserialize(&mut tree).unwrap();
         assert_eq!(data, vec!['a', 'b', 'c']);
     }
+
+    #[test]
+    fn test_int() {
+        let input = "0=123
+1=+69
+2=-32";
+        let mut tree = A3daTree::new(input).unwrap();
+        tree.print();
+        let data: Vec<i64> = Vec::deserialize(&mut tree).unwrap();
+        assert_eq!(data, vec![123, 69, -32]);
+    }
+
+    #[test]
+    fn test_float() {
+        let input = "0=0.0
+1=+1.234
+2=-1.234
+3=6.02e23";
+        let mut tree = A3daTree::new(input).unwrap();
+        tree.print();
+        let data: Vec<f32> = Vec::deserialize(&mut tree).unwrap();
+        assert_eq!(data, vec![0.0, 1.234, -1.234, 6.02e23]);
+    }
 }
