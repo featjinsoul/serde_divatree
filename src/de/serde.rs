@@ -60,7 +60,15 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        let data = self.get_value()?;
+        let val = if data.eq_ignore_ascii_case("true") {
+            true
+        } else if data.eq_ignore_ascii_case("false") {
+            false
+        } else {
+            return Err(DeserializerError::ExpectedBool);
+        };
+        visitor.visit_bool(val)
     }
 
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -320,12 +328,20 @@ impl<'de, 'a> SeqAccess<'de> for SeqParser<'de, 'a> {
 
 #[cfg(test)]
 mod tests {
+    use ::serde::Deserialize;
+
     use super::*;
 
     #[test]
-    fn test_seq() {
-        use ::serde::Deserialize;
+    fn bool() {
+        let input = "test=true";
+        let mut tree = A3daTree::new(input).unwrap();
+        tree.curr = tree.get().first_child().unwrap().node_id();
+        assert!(bool::deserialize(&mut tree).unwrap())
+    }
 
+    #[test]
+    fn test_seq() {
         let input = "0 = a
 1=b
 2=c

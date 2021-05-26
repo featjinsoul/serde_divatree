@@ -27,6 +27,8 @@ pub enum DeserializerError {
     ExpectedSequenece,
     #[error("Expected a character, found something else")]
     ExpectedChar,
+    #[error("Expected a boolean, found something else")]
+    ExpectedBool,
     #[error("{0}")]
     Custom(String),
 }
