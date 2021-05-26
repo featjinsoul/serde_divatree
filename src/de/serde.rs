@@ -53,7 +53,29 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        let node = self.get().data();
+        match node {
+            Node::Key(s) => {
+                //TODO
+                let c = s.chars().next();
+                match c {
+                    Some(e) if e.is_numeric() => self.deserialize_seq(visitor),
+                    _ => self.deserialize_map(visitor),
+                }
+            }
+            Node::Value(s) => {
+                let c = s.chars().next().unwrap();
+                let len = s.split(',').count();
+                match c {
+                    't' | 'T' | 'f' | 'F' => self.deserialize_bool(visitor),
+                    '0'..='9' => self.deserialize_u64(visitor),
+                    '-' => self.deserialize_i64(visitor),
+                    '(' => self.deserialize_tuple(len, visitor),
+                    _ if s.contains('.') => self.deserialize_f64(visitor),
+                    _ => self.deserialize_str(visitor),
+                }
+            }
+        }
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -153,14 +175,14 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
         V: de::Visitor<'de>,
     {
         //visitor.visit_borrowed_str(self.get_value()?)
-        visitor.visit_str(self.get_value()?)
+        visitor.visit_str(self.get().data())
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_string(self.get_value()?.to_string())
+        visitor.visit_string(self.get().data().to_string())
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -188,7 +210,7 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        visitor.visit_unit()
     }
 
     fn deserialize_unit_struct<V>(
@@ -255,7 +277,16 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        if let Some(n) = self.get().first_child() {
+            //self.curr = n.node_id();
+            visitor.visit_map(MapParser {
+                tree: self,
+                next: None,
+                end: false,
+            })
+        } else {
+            Err(DeserializerError::ExpectedSequenece)
+        }
     }
 
     fn deserialize_struct<V>(
@@ -267,7 +298,7 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        self.deserialize_map(visitor)
     }
 
     fn deserialize_enum<V>(
@@ -286,18 +317,23 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        self.deserialize_str(visitor)
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        self.deserialize_any(visitor)
     }
 }
 
 struct SeqParser<'de, 'a>(&'a mut A3daTree<'de>, bool);
+struct MapParser<'de, 'a> {
+    tree: &'a mut A3daTree<'de>,
+    next: Option<NodeId>,
+    end: bool,
+}
 
 impl<'de, 'a> SeqAccess<'de> for SeqParser<'de, 'a> {
     type Error = DeserializerError;
@@ -326,14 +362,45 @@ impl<'de, 'a> SeqAccess<'de> for SeqParser<'de, 'a> {
     }
 }
 
+impl<'de, 'a> MapAccess<'de> for MapParser<'de, 'a> {
+    type Error = DeserializerError;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: DeserializeSeed<'de>,
+    {
+        if self.end {
+            return Ok(None);
+        }
+        let val = seed.deserialize(&mut *self.tree)?;
+        let node = self.tree.get();
+        self.next = node.next_sibling().map(|x| x.node_id());
+        self.tree.curr = node.first_child().unwrap().node_id();
+        Ok(Some(val))
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let val = seed.deserialize(&mut *self.tree)?;
+        match self.next {
+            Some(n) => self.tree.curr = n,
+            None => self.end = true,
+        };
+        Ok(val)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ::serde::Deserialize;
+    use serde_derive::Deserialize;
 
     use super::*;
 
     #[test]
-    fn bool() {
+    fn read_bool() {
         let input = "test=true";
         let mut tree = A3daTree::new(input).unwrap();
         tree.curr = tree.get().first_child().unwrap().node_id();
@@ -341,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn test_seq() {
+    fn read_seq() {
         let input = "0 = a
 1=b
 2=c
@@ -353,7 +420,7 @@ welcome = banana";
     }
 
     #[test]
-    fn test_int() {
+    fn read_int() {
         let input = "0=123
 1=+69
 2=-32";
@@ -364,7 +431,7 @@ welcome = banana";
     }
 
     #[test]
-    fn test_float() {
+    fn read_float() {
         let input = "0=0.0
 1=+1.234
 2=-1.234
@@ -373,5 +440,111 @@ welcome = banana";
         tree.print();
         let data: Vec<f32> = Vec::deserialize(&mut tree).unwrap();
         assert_eq!(data, vec![0.0, 1.234, -1.234, 6.02e23]);
+    }
+
+    #[test]
+    fn read_map() {
+        use std::collections::HashMap;
+
+        let input = "one = 1
+two = 2
+three = 3";
+        let mut tree = A3daTree::new(input).unwrap();
+        let data: HashMap<String, u32> = HashMap::deserialize(&mut tree).unwrap();
+        let mut expected = HashMap::new();
+        expected.insert("one".to_string(), 1);
+        expected.insert("two".to_string(), 2);
+        expected.insert("three".to_string(), 3);
+        assert_eq!(data, expected)
+    }
+
+    #[test]
+    fn read_struct() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Test {
+            foo: u32,
+            bar: f32,
+            baz: bool,
+            inner: Inner,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Inner {
+            name: String,
+            id: u32,
+        }
+        let input = "foo=32
+bar=1.234
+baz=true
+inner.name=John Smith
+inner.id=69
+extra=stuff";
+        let mut tree = A3daTree::new(input).unwrap();
+        let data = Test::deserialize(&mut tree).unwrap();
+        let expected = Test {
+            foo: 32,
+            bar: 1.234,
+            baz: true,
+            inner: Inner {
+                name: "John Smith".to_string(),
+                id: 69,
+            },
+        };
+        assert_eq!(data, expected);
+    }
+
+    #[test]
+    fn read_example() {
+        use crate::de::tests::INPUT;
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct A3da {
+            camera_root: Vec<CameraRoot>,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct CameraRoot {
+            interest: Interest,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Interest {
+            #[serde(rename = "trans")]
+            translation: Vec3,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Vec3 {
+            x: Keys,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Keys {
+            key: Vec<Key>,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Key {
+            #[serde(rename = "type")]
+            ty: u32,
+            data: String,
+        }
+
+        let mut tree = A3daTree::new(INPUT).unwrap();
+        let a3da = A3da::deserialize(&mut tree).unwrap();
+        let expected = A3da {
+            camera_root: vec![CameraRoot {
+                interest: Interest {
+                    translation: Vec3 {
+                        x: Keys {
+                            key: vec![
+                                Key {
+                                    ty: 1,
+                                    data: "(0,-0.469822)".to_string(),
+                                },
+                                Key {
+                                    ty: 1,
+                                    data: "(738,-0.522281,3.31402e-006)".to_string(),
+                                },
+                            ],
+                        },
+                    },
+                },
+            }],
+        };
+        assert_eq!(a3da, expected);
     }
 }

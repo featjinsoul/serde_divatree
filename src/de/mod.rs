@@ -81,9 +81,10 @@ impl<'a> std::ops::Deref for Node<'a> {
 mod tests {
     use super::*;
 
-    const INPUT: &'static str = "camera_root.0.interest.trans.x.key.0.data=(0,-0.469822)
+    pub(crate) const INPUT: &'static str = "camera_root.0.interest.trans.x.key.0.data=(0,-0.469822)
 camera_root.0.interest.trans.x.key.0.type=1
 camera_root.0.interest.trans.x.key.1.data=(738,-0.522281,3.31402e-006)
+camera_root.0.interest.trans.x.key.1.type=1
 ";
 
     #[test]
