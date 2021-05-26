@@ -51,7 +51,12 @@ impl<'a> A3daTree<'a> {
             }
             tree.get_mut(id).unwrap().append(Node::Value(rhs));
         }
-        let curr = tree.root_id().unwrap();
+        let curr = tree
+            .root()
+            .unwrap()
+            .first_child()
+            .unwrap_or(tree.root().unwrap())
+            .node_id();
         Ok(Self { tree, curr })
     }
     fn print(&self) {

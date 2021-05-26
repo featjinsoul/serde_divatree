@@ -209,8 +209,15 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        if let Some(n) = self.get().children().find(|x| x.data().deref() == "0") {
-            self.curr = n.node_id();
+        if self
+            .get()
+            .data()
+            .deref()
+            .chars()
+            .next()
+            .unwrap()
+            .is_numeric()
+        {
             visitor.visit_seq(SeqParser(self, false))
         } else {
             Err(DeserializerError::ExpectedSequenece)
