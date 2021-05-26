@@ -23,15 +23,13 @@ impl<'a> A3daTree<'a> {
 
         for (line_num, line) in lines.enumerate() {
             let mut splits = line.split('=');
-            let lhs = splits
-                .next()
-                .ok_or_else(|| ParseError { line, line_num })?
-                .trim();
+            let err = || ParseError {
+                line_num,
+                line: line.to_string(),
+            };
+            let lhs = splits.next().ok_or_else(err)?.trim();
             let sections = lhs.split('.');
-            let rhs = splits
-                .next()
-                .ok_or_else(|| ParseError { line, line_num })?
-                .trim();
+            let rhs = splits.next().ok_or_else(err)?.trim();
 
             //Guarranteed not to panic, since root is always in tree
             let mut id = tree.root_id().unwrap();
