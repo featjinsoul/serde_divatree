@@ -598,7 +598,7 @@ extra=stuff";
                                     data: "(0,-0.469822)".to_string(),
                                 },
                                 Key {
-                                    ty: 1,
+                                    ty: 2,
                                     data: "(738,-0.522281,3.31402e-006)".to_string(),
                                 },
                             ],
