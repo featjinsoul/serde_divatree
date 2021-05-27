@@ -29,6 +29,12 @@ pub enum DeserializerError {
     ExpectedChar,
     #[error("Expected a boolean, found something else")]
     ExpectedBool,
+    #[error("Expected the start of a tuple, found something else")]
+    ExpectedTuple,
+    #[error("Expected a non empty tuple, found an empty tuple")]
+    ExpectedNonEmptyTuple,
+    #[error("Expected the end of a tuple, found something else")]
+    ExpectedTupleEnd,
     #[error("{0}")]
     Custom(String),
 }

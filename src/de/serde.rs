@@ -174,7 +174,7 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        let data = match self.get().data() {
+        let data: &'de str = match self.get().data() {
             Node::Key(v) => *v,
             Node::Value(v) => *v,
         };
@@ -261,7 +261,17 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        let data = self.get_value()?;
+        if data.starts_with('(') {
+            let parser = TupleParser::new(data)?;
+            if data.ends_with(')') {
+                visitor.visit_seq(parser)
+            } else {
+                Err(DeserializerError::ExpectedTupleEnd)
+            }
+        } else {
+            Err(DeserializerError::ExpectedTuple)
+        }
     }
 
     fn deserialize_tuple_struct<V>(
@@ -332,6 +342,7 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
 }
 
 struct SeqParser<'de, 'a>(&'a mut A3daTree<'de>, bool);
+struct TupleParser<'de>(A3daTree<'de>, bool);
 struct MapParser<'de, 'a> {
     tree: &'a mut A3daTree<'de>,
     next: Option<NodeId>,
@@ -361,6 +372,44 @@ impl<'de, 'a> SeqAccess<'de> for SeqParser<'de, 'a> {
             Some(n) => self.0.curr = n.node_id(),
             None => self.1 = true,
         }
+        Ok(Some(val))
+    }
+}
+
+impl TupleParser<'_> {
+    fn new(input: &str) -> Result<TupleParser, DeserializerError> {
+        let items = input.trim_matches(&['(', ')'][..]).split(',');
+        let mut tree = TreeBuilder::new()
+            .with_root(Node::Key("tuple_root"))
+            .build();
+        let mut root = tree.root_mut().unwrap();
+        for item in items {
+            root.append(Node::Value(item.trim()));
+        }
+        let curr = root
+            .first_child()
+            .ok_or(DeserializerError::ExpectedNonEmptyTuple)?
+            .node_id();
+        Ok(TupleParser(A3daTree { tree, curr }, false))
+    }
+}
+
+impl<'de> SeqAccess<'de> for TupleParser<'de> {
+    type Error = DeserializerError;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        if self.1 {
+            return Ok(None);
+        }
+        let temp = self.0.curr;
+        let val = seed.deserialize(&mut self.0)?;
+        match self.0.tree.get(temp).unwrap().next_sibling() {
+            Some(n) => self.0.curr = n.node_id(),
+            None => self.1 = true,
+        };
         Ok(Some(val))
     }
 }
@@ -443,6 +492,16 @@ welcome = banana";
         tree.print();
         let data: Vec<f32> = Vec::deserialize(&mut tree).unwrap();
         assert_eq!(data, vec![0.0, 1.234, -1.234, 6.02e23]);
+    }
+
+    #[test]
+    fn read_tuple() {
+        let input = "test=(123, 1.234, hello)";
+        let mut tree = A3daTree::new(input).unwrap();
+        tree.curr = tree.get().first_child().unwrap().node_id();
+        tree.print();
+        let data: (u32, f32, &str) = Deserialize::deserialize(&mut tree).unwrap();
+        assert_eq!(data, (123, 1.234, "hello"));
     }
 
     #[test]
