@@ -11,18 +11,18 @@ use super::*;
 use crate::error::DeserializerError;
 
 impl<'a> A3daTree<'a> {
-    fn get(&self) -> slab_tree::NodeRef<Node> {
+    fn get(&self) -> slab_tree::NodeRef<'_, Node<'a>> {
         //self.curr is guarranteed to be a valid id into the tree
         self.tree.get(self.curr).unwrap()
     }
-    fn get_key(&'a self) -> Result<&'a str, DeserializerError> {
+    fn get_key(&self) -> Result<&'a str, DeserializerError> {
         let data = self.get().data();
         match data {
             Node::Key(e) => Ok(e),
             _ => Err(DeserializerError::ExpectedKeyNode),
         }
     }
-    fn get_value(&'a self) -> Result<&'a str, DeserializerError> {
+    fn get_value(&self) -> Result<&'a str, DeserializerError> {
         let data = self.get().data();
         match data {
             Node::Value(e) => Ok(e),
@@ -174,8 +174,11 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        //visitor.visit_borrowed_str(self.get_value()?)
-        visitor.visit_str(self.get().data())
+        let data = match self.get().data() {
+            Node::Key(v) => *v,
+            Node::Value(v) => *v,
+        };
+        visitor.visit_borrowed_str(data)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
