@@ -3,6 +3,7 @@ use slab_tree::*;
 use std::ops::Deref;
 
 pub mod serde;
+pub use self::serde::from_str;
 
 use crate::error::ParseError;
 

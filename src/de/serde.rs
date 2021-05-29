@@ -1,6 +1,6 @@
 use ::serde::de::{
-    self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
-    Visitor,
+    self, Deserialize, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
+    VariantAccess, Visitor,
 };
 use ::serde::Deserializer;
 
@@ -9,6 +9,14 @@ use std::str::FromStr;
 
 use super::*;
 use crate::error::DeserializerError;
+
+pub fn from_str<'a, T>(s: &'a str) -> Result<T, DeserializerError>
+where
+    T: Deserialize<'a>,
+{
+    let mut deserializer = A3daTree::new(s)?;
+    T::deserialize(&mut deserializer)
+}
 
 impl<'a> A3daTree<'a> {
     fn get(&self) -> slab_tree::NodeRef<'_, Node<'a>> {
