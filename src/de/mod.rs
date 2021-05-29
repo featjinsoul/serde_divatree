@@ -24,7 +24,7 @@ impl<'a> A3daTree<'a> {
         let mut tree = TreeBuilder::new().with_root(Node::Key("a3da_root")).build();
 
         for (line_num, line) in lines.enumerate() {
-            if line.is_empty() || line.starts_with('$') {
+            if line.is_empty() || line.starts_with('#') {
                 continue;
             }
             let mut splits = line.split('=');
