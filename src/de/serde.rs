@@ -460,6 +460,31 @@ mod tests {
 
     use super::*;
 
+    const CAM: &'static str = include_str!("../../assets/CAMPV001_BASE.a3da");
+
+    #[test]
+    fn test_cam() {
+        #[derive(Debug, Deserialize)]
+        struct A3daFile {
+            #[serde(rename="_")]
+            metadata: Metadata,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Metadata {
+            converter: Version,
+            property: Version,
+            file_name: String,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Version {
+            version: usize,
+        }
+        let mut tree = A3daTree::new(CAM).unwrap();
+        let data = A3daFile::deserialize(&mut tree).unwrap();
+        dbg!(data);
+        panic!()
+    }
+
     #[test]
     fn read_bool() {
         let input = "test=true";
