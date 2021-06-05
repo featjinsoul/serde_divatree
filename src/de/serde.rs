@@ -345,7 +345,8 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        self.deserialize_any(visitor)
+        // self.deserialize_any(visitor)
+        visitor.visit_unit()
     }
 }
 
