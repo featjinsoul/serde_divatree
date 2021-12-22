@@ -74,13 +74,16 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
             Node::Value(s) => {
                 let c = s.chars().next().unwrap();
                 let len = s.split(',').count();
-                match c {
-                    't' | 'T' | 'f' | 'F' => self.deserialize_bool(visitor),
-                    '0'..='9' if s.contains('.') => self.deserialize_f64(visitor),
-                    '0'..='9' => self.deserialize_u64(visitor),
-                    '-' => self.deserialize_i64(visitor),
-                    '(' => self.deserialize_tuple(len, visitor),
-                    _ => self.deserialize_str(visitor),
+                if self.parse_int::<i64>().is_ok() {
+                    self.deserialize_i64(visitor)
+                } else if self.parse_float::<f64>().is_ok() {
+                    self.deserialize_f64(visitor)
+                } else {
+                    match c {
+                        't' | 'T' | 'f' | 'F' => self.deserialize_bool(visitor),
+                        '(' => self.deserialize_tuple(len, visitor),
+                        _ => self.deserialize_str(visitor),
+                    }
                 }
             }
         }
