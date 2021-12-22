@@ -76,10 +76,10 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
                 let len = s.split(',').count();
                 match c {
                     't' | 'T' | 'f' | 'F' => self.deserialize_bool(visitor),
+                    '0'..='9' if s.contains('.') => self.deserialize_f64(visitor),
                     '0'..='9' => self.deserialize_u64(visitor),
                     '-' => self.deserialize_i64(visitor),
                     '(' => self.deserialize_tuple(len, visitor),
-                    _ if s.contains('.') => self.deserialize_f64(visitor),
                     _ => self.deserialize_str(visitor),
                 }
             }
@@ -353,7 +353,8 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        self.deserialize_any(visitor)
+        // self.deserialize_any(visitor)
+        visitor.visit_unit()
     }
 }
 
@@ -522,6 +523,31 @@ mod tests {
     use serde_derive::Deserialize;
 
     use super::*;
+
+    const CAM: &'static str = include_str!("../../assets/CAMPV001_BASE.a3da");
+
+    #[test]
+    fn test_cam() {
+        #[derive(Debug, Deserialize)]
+        struct A3daFile {
+            #[serde(rename="_")]
+            metadata: Metadata,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Metadata {
+            converter: Version,
+            property: Version,
+            file_name: String,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Version {
+            version: usize,
+        }
+        let mut tree = A3daTree::new(CAM).unwrap();
+        let data = A3daFile::deserialize(&mut tree).unwrap();
+        dbg!(data);
+        panic!()
+    }
 
     #[test]
     fn read_bool() {
