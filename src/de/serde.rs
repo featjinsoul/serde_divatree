@@ -331,7 +331,15 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        if let Ok(val) = self.get_value() {
+            if val.starts_with("(") {
+                visitor.visit_enum(EnumParser { de: self })
+            } else {
+                visitor.visit_enum(val.into_deserializer())
+            }
+        } else {
+            visitor.visit_enum(EnumParser { de: self })
+        }
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -355,6 +363,9 @@ struct MapParser<'de, 'a> {
     tree: &'a mut A3daTree<'de>,
     next: Option<NodeId>,
     end: bool,
+}
+struct EnumParser<'de, 'a> {
+    de: &'a mut A3daTree<'de>,
 }
 
 impl<'de, 'a> SeqAccess<'de> for SeqParser<'de, 'a> {
@@ -449,6 +460,59 @@ impl<'de, 'a> MapAccess<'de> for MapParser<'de, 'a> {
             None => self.end = true,
         };
         Ok(val)
+    }
+}
+
+impl<'de, 'a> EnumAccess<'de> for EnumParser<'de, 'a> {
+    type Error = DeserializerError;
+
+    type Variant = Self;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let val = seed.deserialize(&mut *self.de)?;
+        let node = self.de.get();
+        self.de.curr = node.first_child().unwrap().node_id();
+        Ok((val, self))
+    }
+}
+
+impl<'de, 'a> VariantAccess<'de> for EnumParser<'de, 'a> {
+    type Error = DeserializerError;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        Err(DeserializerError::ExpectedValueNode)
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        println!("newtyper");
+        dbg!(self.de.get_key());
+        seed.deserialize(self.de)
+    }
+
+    fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        println!("tuple enm");
+        serde::Deserializer::deserialize_tuple(self.de, len, visitor)
+    }
+
+    fn struct_variant<V>(
+        self,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        println!("struct enm");
+        serde::Deserializer::deserialize_map(self.de, visitor)
     }
 }
 
@@ -558,6 +622,56 @@ extra=stuff";
                 name: "John Smith".to_string(),
                 id: 69,
             },
+        };
+        assert_eq!(data, expected);
+    }
+
+    #[test]
+    fn read_enum() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Test {
+            bars: Vec<Bar>,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        enum Bar {
+            None,
+            Foo(u32),
+            Bar(u32, f32),
+            Baz(String),
+            Quux { foo: u32, bar: f32 },
+            Foobar(Foobar),
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Foobar {
+            foo: u32,
+            bar: f32,
+        }
+        let input = "bars.0=None
+bars.1.Foo=123
+bars.2.Bar=(123, 3.1415)
+bars.3.Baz=Hello World!
+bars.4.Quux.foo=123
+bars.4.Quux.bar=3.1415
+bars.5.Foobar.foo=123
+bars.5.Foobar.bar=3.1415
+";
+        let mut tree = A3daTree::new(input).unwrap();
+        let data = Test::deserialize(&mut tree).unwrap();
+        let expected = Test {
+            bars: vec![
+                Bar::None,
+                Bar::Foo(123),
+                Bar::Bar(123, 3.1415),
+                Bar::Baz("Hello World!".to_string()),
+                Bar::Quux {
+                    foo: 123,
+                    bar: 3.1415,
+                },
+                Bar::Foobar(Foobar {
+                    foo: 123,
+                    bar: 3.1415,
+                }),
+            ],
         };
         assert_eq!(data, expected);
     }
