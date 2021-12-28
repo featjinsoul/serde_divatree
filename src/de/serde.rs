@@ -262,7 +262,7 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
             .unwrap()
             .is_numeric()
         {
-            visitor.visit_seq(SeqParser(self, false))
+            visitor.visit_seq(SeqParser(self, self.get().parent().unwrap().node_id(), 0))
         } else {
             Err(DeserializerError::ExpectedSequenece)
         }
@@ -361,7 +361,7 @@ impl<'de, 'a> Deserializer<'de> for &'a mut A3daTree<'de> {
     }
 }
 
-struct SeqParser<'de, 'a>(&'a mut A3daTree<'de>, bool);
+struct SeqParser<'de, 'a>(&'a mut A3daTree<'de>, NodeId, usize);
 struct TupleParser<'de>(A3daTree<'de>, bool);
 struct MapParser<'de, 'a> {
     tree: &'a mut A3daTree<'de>,
@@ -379,22 +379,32 @@ impl<'de, 'a> SeqAccess<'de> for SeqParser<'de, 'a> {
     where
         T: DeserializeSeed<'de>,
     {
-        if self.1 {
+        let id = self.2.to_string();
+        dbg!(
+            self.0
+                .tree
+                .get(self.1)
+                .unwrap()
+                .children()
+                .map(|x| x.data())
+                .collect::<Vec<_>>(),
+            &id
+        );
+        let node = self
+            .0
+            .tree
+            .get(self.1)
+            .unwrap()
+            .children()
+            .find(|x| x.data() == &Node::Key(&id));
+        self.0.curr = if let Some(node) = node {
+            dbg!(node.children().map(|x| x.data()).collect::<Vec<_>>());
+            node.first_child().expect("Non empty index").node_id()
+        } else {
             return Ok(None);
-        }
-        let idx = self.0.get_char().unwrap();
-        if !idx.is_numeric() {
-            return Ok(None);
-        }
-        self.1 = self.0.get().next_sibling().is_none();
-        let temp = self.0.curr;
-        self.0.curr = self.0.get().first_child().unwrap().node_id();
+        };
         let val = seed.deserialize(&mut *self.0)?;
-        self.0.curr = temp;
-        match self.0.get().next_sibling() {
-            Some(n) => self.0.curr = n.node_id(),
-            None => self.1 = true,
-        }
+        self.2 += 1;
         Ok(Some(val))
     }
 }
