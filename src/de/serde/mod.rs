@@ -9,6 +9,7 @@ use std::str::FromStr;
 
 use super::*;
 use crate::error::DeserializerError;
+use crate::serde::atom::AtomParser;
 
 pub mod atom;
 
@@ -29,6 +30,7 @@ impl<'de, I: Iterator<Item = &'de str>> Lexer<Peekable<I>> {
             .ok_or(DeserializerError::ExpectedKeyValuePair)
     }
     fn value(&mut self) -> Result<&'de str, DeserializerError> {
+        dbg!(self.lines.peek());
         self.peek_key_value().map(|x| x.value).or(self
             .lines
             .next()
@@ -48,7 +50,7 @@ impl<'de, I: Iterator<Item = &'de str>> Lexer<Peekable<I>> {
 
 impl<'a, 'de, I: 'de> Deserializer<'de> for &'a mut Lexer<Peekable<I>>
 where
-    I: Iterator<Item = &'de str>,
+    I: Iterator<Item = &'de str> + Clone,
 {
     type Error = DeserializerError;
 
@@ -237,7 +239,59 @@ where
     where
         V: Visitor<'de>,
     {
-        todo!()
+        #[derive(Clone)]
+        struct MapParser<'a, T> {
+            iter: LexerChildren<'a, T>,
+            // cur: KeyValue<'a>,
+        }
+
+        impl<'a, T: Iterator<Item = &'a str> + Clone + 'a> MapParser<'a, T> {
+            fn peek_key_value(&mut self) -> Option<KeyValue<'a>> {
+                let mut iter = self.iter.clone().peekable();
+                iter.peek().cloned().and_then(KeyValue::new)
+            }
+        }
+
+        impl<'a, T: Iterator<Item = &'a str> + Clone + 'a> MapAccess<'a> for MapParser<'a, T> {
+            type Error = DeserializerError;
+
+            fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+            where
+                K: DeserializeSeed<'a>,
+            {
+                println!("reading map key");
+                let keyval = if let Some(keyval) = self.peek_key_value() {
+                    keyval
+                } else {
+                    return Ok(None);
+                };
+                let ident = keyval.path().next().expect("path");
+                dbg!(ident);
+                let lexer = AtomParser(ident);
+                seed.deserialize(lexer).map(Some).map_err(Into::into)
+            }
+
+            fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+            where
+                V: DeserializeSeed<'a>,
+            {
+                println!("reading map value");
+                let mut iter = LexerChildren::new(self.clone().iter)
+                    .strip_prefix(true)
+                    .chain(std::iter::once(
+                        self.peek_key_value().expect("key value").value,
+                    ))
+                    .peekable();
+                dbg!(iter.peek());
+                let mut lexer = Lexer::new(iter);
+                self.iter.next();
+                seed.deserialize(&mut lexer)
+            }
+        }
+
+        let mut iter = self.lines.clone().peekable();
+        let children = LexerChildren::new(iter);
+        visitor.visit_map(MapParser { iter: children })
     }
 
     fn deserialize_struct<V>(
@@ -281,5 +335,47 @@ where
         V: Visitor<'de>,
     {
         self.deserialize_unit(visitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn read_map() {
+        let input = "foo = 1
+bar = 2
+baz = 3
+quux = 4
+";
+        let mut expected = HashMap::new();
+        expected.insert("foo", 1);
+        expected.insert("bar", 2);
+        expected.insert("baz", 3);
+        expected.insert("quux", 4);
+        assert_eq!(from_str(input), Ok(expected));
+    }
+    #[test]
+    fn read_map_nested() {
+        let input = "foo.bar = 1
+foo.baz = 2
+bar.baz = 3
+bar.quux = 4";
+        let mut expected = HashMap::new();
+
+        let mut foo = HashMap::new();
+        foo.insert("bar", 1);
+        foo.insert("baz", 2);
+
+        let mut bar = HashMap::new();
+        bar.insert("baz", 3);
+        bar.insert("quux", 4);
+
+        expected.insert("foo", foo);
+        expected.insert("bar", bar);
+        assert_eq!(from_str(input), Ok(expected));
     }
 }
