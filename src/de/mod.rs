@@ -76,21 +76,17 @@ impl<'de> Lexer<Peekable<std::str::Lines<'de>>> {
 
 struct LexerChildren<'de, I> {
     lines: I,
-    parent: &'de str,
-    first: Option<&'de str>,
+    parent: Option<&'de str>,
     strip_prefix: bool,
 }
 
 impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
-    fn new(mut lines: I) -> Option<LexerChildren<'de, I>> {
-        let line = lines.next()?;
-        let parent = Self::get_parent(line)?;
-        Some(LexerChildren {
+    fn new(mut lines: I) -> LexerChildren<'de, I> {
+        LexerChildren {
             lines,
-            parent,
-            first: Some(line),
+            parent: None,
             strip_prefix: false,
-        })
+        }
     }
 
     fn strip_prefix(self, strip_prefix: bool) -> Self {
@@ -117,19 +113,17 @@ where
     type Item = &'de str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let line = if let Some(first) = self.first {
-            self.first = None;
-            Some(first)
-        } else {
-            self.lines.next()
-        }?;
-        let stripped = line.strip_prefix(self.parent);
-        dbg!(stripped, line);
-        if self.strip_prefix {
-            stripped
-        } else {
-            stripped.and(Some(line))
+        let line = self.lines.next()?;
+        if let None = self.parent {
+            self.parent = if self.strip_prefix {
+                Self::get_parent(line)
+            } else {
+                Some("")
+            }
         }
+        let stripped = line.strip_prefix(self.parent?);
+        dbg!(stripped);
+        stripped
     }
 }
 
@@ -147,16 +141,14 @@ foobar
 
         let par = Lexer::from_str(INPUT);
         let mut lines = INPUT.lines();
-        let mut child = LexerChildren::new(lines.clone()).unwrap();
+        let mut child = LexerChildren::new(lines.clone());
+        assert_eq!(child.next(), lines.next());
         assert_eq!(child.next(), lines.next());
         assert_eq!(child.next(), lines.next());
         assert_eq!(child.next(), lines.next());
         assert_eq!(child.next(), None);
 
-        assert_eq!(
-            LexerChildren::new("".lines()).and_then(|mut x| x.next()),
-            None
-        );
+        assert_eq!(LexerChildren::new("".lines()).next(), None);
     }
 
     #[test]
@@ -169,7 +161,7 @@ foobar
 
         let par = Lexer::from_str(INPUT);
         let mut lines = INPUT.lines();
-        let mut child = LexerChildren::new(lines).unwrap().strip_prefix(true);
+        let mut child = LexerChildren::new(lines).strip_prefix(true);
         assert_eq!(child.next(), Some("bar"));
         assert_eq!(child.next(), Some("baz"));
         assert_eq!(child.next(), Some("quux"));
