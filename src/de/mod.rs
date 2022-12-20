@@ -68,9 +68,9 @@ impl<I> Lexer<I> {
     }
 }
 
-impl<'de> Lexer<std::str::Lines<'de>> {
+impl<'de> Lexer<Peekable<std::str::Lines<'de>>> {
     fn from_str(input: &'de str) -> Self {
-        Self::new(input.lines())
+        Self::new(input.lines().peekable())
     }
 }
 
