@@ -78,6 +78,7 @@ struct LexerChildren<'de, I> {
     lines: I,
     parent: &'de str,
     first: Option<&'de str>,
+    strip_prefix: bool,
 }
 
 impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
@@ -88,13 +89,24 @@ impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
             lines,
             parent,
             first: Some(line),
+            strip_prefix: false,
         })
+    }
+
+    fn strip_prefix(self, strip_prefix: bool) -> Self {
+        Self {
+            strip_prefix,
+            ..self
+        }
     }
 
     fn get_parent(s: &str) -> Option<&str> {
         s.find(KeyValue::PATH_DELIMITER)
-            .and_then(|i| s.get(..i))
+            .and_then(|i| s.get(..i + 1))
             .map(|x| x.trim())
+    }
+    fn to_lexer(self) -> Lexer<Self> {
+        Lexer { lines: self }
     }
 }
 
@@ -105,15 +117,18 @@ where
     type Item = &'de str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(first) = self.first {
+        let line = if let Some(first) = self.first {
             self.first = None;
-            return Some(first);
-        }
-        let line = self.lines.next()?;
-        if Self::get_parent(line) == Some(self.parent) {
-            Some(line)
+            Some(first)
         } else {
-            None
+            self.lines.next()
+        }?;
+        let stripped = line.strip_prefix(self.parent);
+        dbg!(stripped, line);
+        if self.strip_prefix {
+            stripped
+        } else {
+            stripped.and(Some(line))
         }
     }
 }
@@ -142,6 +157,23 @@ foobar
             LexerChildren::new("".lines()).and_then(|mut x| x.next()),
             None
         );
+    }
+
+    #[test]
+    fn lexer_chidren_stripped() {
+        const INPUT: &'static str = "foo.bar
+foo.baz
+foo.quux
+foobar
+";
+
+        let par = Lexer::from_str(INPUT);
+        let mut lines = INPUT.lines();
+        let mut child = LexerChildren::new(lines).unwrap().strip_prefix(true);
+        assert_eq!(child.next(), Some("bar"));
+        assert_eq!(child.next(), Some("baz"));
+        assert_eq!(child.next(), Some("quux"));
+        assert_eq!(child.next(), None);
     }
 
     #[test]
