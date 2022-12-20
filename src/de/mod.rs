@@ -74,24 +74,47 @@ impl<'de> Lexer<Peekable<std::str::Lines<'de>>> {
     }
 }
 
-impl<'de, I> Lexer<I>
-where
-    I: Iterator<Item = &'de str> + Clone,
-{
-    fn children(&self) -> Option<impl Iterator<Item = &'de str>> {
-        fn get_parent(s: &str) -> Option<&str> {
-            s.find(KeyValue::PATH_DELIMITER)
-                .and_then(|i| s.get(..i))
-                .map(|x| x.trim())
-        }
+struct LexerChildren<'de, I> {
+    lines: I,
+    parent: &'de str,
+    first: Option<&'de str>,
+}
 
-        let mut lines = self.lines.clone().peekable();
-        let first = lines.next()?;
-        let parent = get_parent(first);
-        Some(
-            std::iter::once(first)
-                .chain(lines.clone().take_while(move |x| get_parent(x) == parent)),
-        )
+impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
+    fn new(mut lines: I) -> Option<LexerChildren<'de, I>> {
+        let line = lines.next()?;
+        let parent = Self::get_parent(line)?;
+        Some(LexerChildren {
+            lines,
+            parent,
+            first: Some(line),
+        })
+    }
+
+    fn get_parent(s: &str) -> Option<&str> {
+        s.find(KeyValue::PATH_DELIMITER)
+            .and_then(|i| s.get(..i))
+            .map(|x| x.trim())
+    }
+}
+
+impl<'de, I> Iterator for LexerChildren<'de, I>
+where
+    I: Iterator<Item = &'de str>,
+{
+    type Item = &'de str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(first) = self.first {
+            self.first = None;
+            return Some(first);
+        }
+        let line = self.lines.next()?;
+        if Self::get_parent(line) == Some(self.parent) {
+            Some(line)
+        } else {
+            None
+        }
     }
 }
 
@@ -109,14 +132,14 @@ foobar
 
         let par = Lexer::from_str(INPUT);
         let mut lines = INPUT.lines();
-        let mut child = par.children().unwrap();
+        let mut child = LexerChildren::new(lines.clone()).unwrap();
         assert_eq!(child.next(), lines.next());
         assert_eq!(child.next(), lines.next());
         assert_eq!(child.next(), lines.next());
         assert_eq!(child.next(), None);
 
         assert_eq!(
-            Lexer::from_str("").children().and_then(|mut x| x.next()),
+            LexerChildren::new("".lines()).and_then(|mut x| x.next()),
             None
         );
     }
