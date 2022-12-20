@@ -74,6 +74,7 @@ impl<'de> Lexer<Peekable<std::str::Lines<'de>>> {
     }
 }
 
+#[derive(Clone)]
 struct LexerChildren<'de, I> {
     lines: I,
     parent: Option<&'de str>,
