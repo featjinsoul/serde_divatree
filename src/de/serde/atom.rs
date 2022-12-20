@@ -21,7 +21,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy)]
-struct AtomParser<'de>(&'de str);
+pub(crate) struct AtomParser<'de>(pub &'de str);
 
 #[derive(Debug, Error, PartialEq, Eq, Clone)]
 pub enum ParseAtomError {
