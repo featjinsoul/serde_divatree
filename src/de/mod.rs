@@ -1,6 +1,7 @@
 use slab_tree::*;
 
 use std::iter::{Peekable, Take};
+use std::num::NonZeroU8;
 use std::str::{Lines, Split};
 
 pub mod serde;
@@ -26,29 +27,28 @@ impl<'a> KeyValue<'a> {
     fn new(line: &'a str) -> Option<Self> {
         let mut iter = line.split(Self::KEY_VALUE_DELIMITER);
         let key = iter.next()?.trim();
-        if key.is_empty() {
-            return None;
-        }
         let value = iter.next()?.trim();
-        if value.is_empty() {
-            return None;
-        }
         Some(Self { key, value })
     }
     fn path(&self) -> Split<'a, char> {
         self.key.split(Self::PATH_DELIMITER)
     }
-    fn strip(&self, levels: usize) -> Option<Self> {
-        let dot_pos = self
+    fn prefix(&self, level: usize) -> Option<&'a str> {
+        self.prefixes().nth(level)
+    }
+    fn prefixes(&self) -> impl Iterator<Item = &'a str> + 'a {
+        use std::iter::once;
+        let key = self.key;
+        let mid = self
             .key
             .match_indices(Self::PATH_DELIMITER)
-            .nth(levels)
-            .map(|(i, _)| i);
-        let key = dot_pos.and_then(|i| self.key.get(i + 1..))?;
-        Some(Self {
-            key,
-            value: self.value,
-        })
+            .flat_map(move |(i, _)| key.get(..i + 1));
+        let opt = Some(key).filter(|x| !x.is_empty());
+        once("").chain(mid).chain(opt.into_iter())
+    }
+    fn strip(&self, levels: usize) -> Option<Self> {
+        let key = self.key.strip_prefix(self.prefix(levels)?)?;
+        Some(Self { key, ..*self })
     }
 
     fn levels(self) -> impl Iterator<Item = KeyValue<'a>> + 'a {
@@ -77,33 +77,67 @@ impl<'de> Lexer<Peekable<std::str::Lines<'de>>> {
 #[derive(Clone)]
 struct LexerChildren<'de, I> {
     lines: I,
-    parent: Option<&'de str>,
-    strip_prefix: bool,
+    prefix: Option<&'de str>,
+    /// Decides how much is taken as the prefix
+    prefix_level: u8,
+    /// A cached string used when changing the prefix mid iter
+    cache: Option<&'de str>,
 }
 
 impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
-    fn new(mut lines: I) -> LexerChildren<'de, I> {
+    fn new(lines: I) -> LexerChildren<'de, I> {
         LexerChildren {
             lines,
-            parent: None,
-            strip_prefix: false,
+            prefix: None,
+            prefix_level: 0,
+            cache: None,
         }
     }
 
-    fn strip_prefix(self, strip_prefix: bool) -> Self {
-        Self {
-            strip_prefix,
-            ..self
-        }
+    fn prefix_level(&self) -> u8 {
+        self.prefix_level
     }
 
-    fn get_parent(s: &str) -> Option<&str> {
-        s.find(KeyValue::PATH_DELIMITER)
-            .and_then(|i| s.get(..i + 1))
-            .map(|x| x.trim())
+    fn set_prefix_level(&mut self, prefix_level: u8) -> Option<&'de str> {
+        self.prefix_level = prefix_level;
+        std::mem::replace(&mut self.prefix, None)
+    }
+
+    fn with_prefix_level(mut self, prefix_level: u8) -> Self {
+        self.set_prefix_level(prefix_level);
+        self
+    }
+
+    fn increment_prefix_level(&mut self) -> Option<&'de str> {
+        self.set_prefix_level(self.prefix_level.saturating_add(1))
+    }
+
+    fn decrement_prefix_level(&mut self) -> Option<&'de str> {
+        self.set_prefix_level(self.prefix_level.saturating_sub(1))
+    }
+
+    fn get_prefix<'a>(&self, s: &'a str) -> Option<&'a str> {
+        KeyValue::new(s)?.prefix(self.prefix_level as usize)
     }
     fn to_lexer(self) -> Lexer<Self> {
         Lexer { lines: self }
+    }
+}
+
+impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, Peekable<I>> {
+    fn peek(&mut self) -> Option<&'de str> {
+        let line = if self.cache.is_none() || self.prefix.is_some() {
+            self.lines.peek().cloned()
+        } else {
+            self.cache
+        }?;
+        let prefix = self.prefix.or_else(|| self.get_prefix(line));
+        // self.cache = Some(line);
+        line.strip_prefix(prefix?)
+    }
+
+    fn is_finished(&mut self) -> bool {
+        self.cache.is_some() && self.peek().is_none()
     }
 }
 
@@ -114,16 +148,14 @@ where
     type Item = &'de str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let line = self.lines.next()?;
-        if let None = self.parent {
-            self.parent = if self.strip_prefix {
-                Self::get_parent(line)
-            } else {
-                Some("")
-            }
-        }
-        let stripped = line.strip_prefix(self.parent?);
-        dbg!(stripped);
+        let line = if self.cache.is_none() || self.prefix.is_some() {
+            self.lines.next()
+        } else {
+            self.cache
+        }?;
+        self.prefix = self.prefix.or_else(|| self.get_prefix(line));
+        self.cache = Some(line);
+        let stripped = line.strip_prefix(self.prefix?);
         stripped
     }
 }
@@ -134,10 +166,10 @@ mod tests {
 
     #[test]
     fn lexer_children() {
-        const INPUT: &'static str = "foo.bar
-foo.baz
-foo.quux
-foobar
+        const INPUT: &'static str = "foo.bar = 1
+foo.baz = 1
+foo.quux = 1
+foobar = 1
 ";
 
         let par = Lexer::from_str(INPUT);
@@ -154,18 +186,42 @@ foobar
 
     #[test]
     fn lexer_chidren_stripped() {
-        const INPUT: &'static str = "foo.bar
-foo.baz
-foo.quux
-foobar
+        const INPUT: &'static str = "foo.bar = 1
+foo.baz = 1
+foo.quux = 1
+foobar = 1
 ";
 
         let par = Lexer::from_str(INPUT);
         let mut lines = INPUT.lines();
-        let mut child = LexerChildren::new(lines).strip_prefix(true);
-        assert_eq!(child.next(), Some("bar"));
-        assert_eq!(child.next(), Some("baz"));
-        assert_eq!(child.next(), Some("quux"));
+        let mut child = LexerChildren::new(lines).with_prefix_level(1);
+        assert_eq!(child.next(), Some("bar = 1"));
+        assert_eq!(child.next(), Some("baz = 1"));
+        assert_eq!(child.next(), Some("quux = 1"));
+        assert_eq!(child.next(), None);
+    }
+
+    #[test]
+    fn lexer_chidren_strip_switch() {
+        const INPUT: &'static str = "foo.bar.baz = 1
+foo.bar.quux = 1
+test = 1
+foobar.baz = 1
+foobar.quux = 1
+";
+
+        let par = Lexer::from_str(INPUT);
+        let mut lines = INPUT.lines();
+        let mut child = LexerChildren::new(lines).with_prefix_level(1);
+        assert_eq!(child.next(), Some("bar.baz = 1"));
+        assert_eq!(child.next(), Some("bar.quux = 1"));
+        assert_eq!(child.set_prefix_level(0), Some("foo."));
+        assert_eq!(child.next(), Some("foo.bar.quux = 1"));
+        assert_eq!(child.next(), Some("test = 1"));
+        child.next();
+        assert_eq!(child.set_prefix_level(1), Some(""));
+        assert_eq!(child.next(), Some("baz = 1"));
+        assert_eq!(child.next(), Some("quux = 1"));
         assert_eq!(child.next(), None);
     }
 
@@ -180,5 +236,25 @@ foobar
         );
         assert_eq!(KeyValue::new("= baz "), None);
         assert_eq!(KeyValue::new(" bar = "), None);
+    }
+
+    #[test]
+    fn key_value_prefix() {
+        let kv = KeyValue::new("foo.bar.baz = 1").unwrap();
+
+        assert_eq!(kv.prefix(0), Some(""));
+        assert_eq!(kv.prefix(1), Some("foo."));
+        assert_eq!(kv.prefix(2), Some("foo.bar."));
+        assert_eq!(kv.prefix(3), Some("foo.bar.baz"));
+        assert_eq!(kv.prefix(4), None);
+
+        let mut singleton = KeyValue::new("foo = 1").unwrap().prefixes();
+        assert_eq!(singleton.next(), Some(""));
+        assert_eq!(singleton.next(), Some("foo"));
+        assert_eq!(singleton.next(), None);
+
+        let mut empty = KeyValue::new(" = 1").unwrap().prefixes();
+        assert_eq!(empty.next(), Some(""));
+        assert_eq!(empty.next(), None);
     }
 }
