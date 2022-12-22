@@ -43,9 +43,7 @@ impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
 
 impl<'a, 'de, I: Iterator<Item = &'de str>> LexerChildren<'de, Peekable<I>> {
     fn peek_key_value(&mut self) -> Result<KeyValue<'de>, DeserializerError> {
-        self.lines
-            .peek()
-            .cloned()
+        self.peek()
             .and_then(KeyValue::new)
             .ok_or(DeserializerError::ExpectedKeyValuePair)
     }
@@ -61,7 +59,18 @@ where
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let kv = self.peek_key_value()?;
+        if !kv.key.is_empty() {
+            if kv.key.chars().all(|x| char::is_ascii_digit(&x)) {
+                self.deserialize_seq(visitor)
+            } else {
+                self.deserialize_map(visitor)
+            }
+        } else {
+            AtomParser(kv.value)
+                .deserialize_any(visitor)
+                .map_err(Into::into)
+        }
     }
 
     fn deserialize_bool<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
@@ -368,6 +377,8 @@ bar.quux = 4";
             bar: f32,
             baz: bool,
             inner: Inner,
+            #[serde(flatten)]
+            custom: HashMap<String, String>,
         }
         #[derive(Debug, PartialEq, Deserialize)]
         struct Inner {
@@ -381,6 +392,8 @@ inner.name=John Smith
 inner.id=69
 extra=stuff";
         let data: Test = from_str(input).unwrap();
+        let mut custom = HashMap::new();
+        custom.insert("extra".to_string(), "stuff".to_string());
         let expected = Test {
             foo: 32,
             bar: 1.234,
@@ -389,6 +402,7 @@ extra=stuff";
                 name: "John Smith".to_string(),
                 id: 69,
             },
+            custom,
         };
         assert_eq!(data, expected);
     }
