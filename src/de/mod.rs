@@ -234,8 +234,20 @@ foobar.quux = 1
                 value: "baz"
             })
         );
-        assert_eq!(KeyValue::new("= baz "), None);
-        assert_eq!(KeyValue::new(" bar = "), None);
+        assert_eq!(
+            KeyValue::new("= baz "),
+            Some(KeyValue {
+                key: "",
+                value: "baz"
+            })
+        );
+        assert_eq!(
+            KeyValue::new(" bar = "),
+            Some(KeyValue {
+                key: "bar",
+                value: ""
+            })
+        );
     }
 
     #[test]
