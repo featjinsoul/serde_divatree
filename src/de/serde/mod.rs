@@ -36,8 +36,8 @@ impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
         println!("{:?}, reading {:?}", line, val);
         Ok(val)
     }
-    fn parse_atom<T: Deserialize<'de>>(&mut self) -> Result<T, DeserializerError> {
-        atom::from_str(self.value()?).map_err(Into::into)
+    fn atom(&mut self) -> Result<AtomParser<'de>, DeserializerError> {
+        self.value().map(AtomParser)
     }
 }
 
@@ -73,116 +73,118 @@ where
         }
     }
 
-    fn deserialize_bool<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_bool(self.parse_atom()?)
+        self.atom()?.deserialize_bool(visitor).map_err(Into::into)
     }
 
-    fn deserialize_i8<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i8(self.parse_atom()?)
+        self.atom()?.deserialize_i8(visitor).map_err(Into::into)
     }
 
-    fn deserialize_i16<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i16(self.parse_atom()?)
+        self.atom()?.deserialize_i16(visitor).map_err(Into::into)
     }
 
-    fn deserialize_i32<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i32(self.parse_atom()?)
+        self.atom()?.deserialize_i32(visitor).map_err(Into::into)
     }
 
-    fn deserialize_i64<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i64(self.parse_atom()?)
+        self.atom()?.deserialize_i64(visitor).map_err(Into::into)
     }
 
-    fn deserialize_u8<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u8(self.parse_atom()?)
+        self.atom()?.deserialize_u8(visitor).map_err(Into::into)
     }
 
-    fn deserialize_u16<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u16(self.parse_atom()?)
+        self.atom()?.deserialize_u16(visitor).map_err(Into::into)
     }
 
-    fn deserialize_u32<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u32(self.parse_atom()?)
+        self.atom()?.deserialize_u32(visitor).map_err(Into::into)
     }
 
-    fn deserialize_u64<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u64(self.parse_atom()?)
+        self.atom()?.deserialize_u64(visitor).map_err(Into::into)
     }
 
-    fn deserialize_f32<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_f32(self.parse_atom()?)
+        self.atom()?.deserialize_f32(visitor).map_err(Into::into)
     }
 
-    fn deserialize_f64<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_f64(self.parse_atom()?)
+        self.atom()?.deserialize_f64(visitor).map_err(Into::into)
     }
 
-    fn deserialize_char<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        self.atom()?.deserialize_char(visitor).map_err(Into::into)
     }
 
-    fn deserialize_str<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_borrowed_str(self.parse_atom()?)
+        self.atom()?.deserialize_str(visitor).map_err(Into::into)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_str(visitor)
+        self.atom()?.deserialize_string(visitor).map_err(Into::into)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        self.atom()?.deserialize_bytes(visitor).map_err(Into::into)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        self.atom()?
+            .deserialize_byte_buf(visitor)
+            .map_err(Into::into)
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -232,7 +234,9 @@ where
     where
         V: Visitor<'de>,
     {
-        todo!()
+        self.atom()?
+            .deserialize_tuple(len, visitor)
+            .map_err(Into::into)
     }
 
     fn deserialize_tuple_struct<V>(
@@ -244,7 +248,7 @@ where
     where
         V: Visitor<'de>,
     {
-        todo!()
+        self.deserialize_tuple(len, visitor)
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -278,11 +282,13 @@ where
         todo!()
     }
 
-    fn deserialize_identifier<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_str(visitor)
+        self.atom()?
+            .deserialize_identifier(visitor)
+            .map_err(Into::into)
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
