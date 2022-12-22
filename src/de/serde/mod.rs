@@ -326,6 +326,8 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for LexerChildren<'
 mod tests {
     use std::collections::HashMap;
 
+    use serde_derive::Deserialize;
+
     use super::*;
 
     #[test]
@@ -361,5 +363,38 @@ bar.quux = 4";
         expected.insert("foo", foo);
         expected.insert("bar", bar);
         assert_eq!(from_str(input), Ok(expected));
+    }
+
+    #[test]
+    fn read_struct() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Test {
+            foo: u32,
+            bar: f32,
+            baz: bool,
+            inner: Inner,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Inner {
+            name: String,
+            id: u32,
+        }
+        let input = "foo=32
+bar=1.234
+baz=true
+inner.name=John Smith
+inner.id=69
+extra=stuff";
+        let data: Test = from_str(input).unwrap();
+        let expected = Test {
+            foo: 32,
+            bar: 1.234,
+            baz: true,
+            inner: Inner {
+                name: "John Smith".to_string(),
+                id: 69,
+            },
+        };
+        assert_eq!(data, expected);
     }
 }
