@@ -273,12 +273,7 @@ where
     where
         V: Visitor<'de>,
     {
-        let key = self
-            .peek_key_value()?
-            .path()
-            .next()
-            .ok_or(DeserializerError::ExpectedKeyNode)?;
-        visitor.visit_borrowed_str(key)
+        self.deserialize_str(visitor)
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
