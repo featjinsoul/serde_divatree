@@ -353,6 +353,10 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for LexerChildren<'
             self.decrement_prefix_level();
             self.next();
             Some(val).transpose()
+        } else if ident.eq_ignore_ascii_case("length") {
+            // length always comes last due to lexicographic ordering
+            // 0-9 < a-z
+            Ok(None)
         } else {
             Err(DeserializerError::ExpectedSequenece)
         }
