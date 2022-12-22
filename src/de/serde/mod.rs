@@ -17,7 +17,11 @@ pub fn from_str<'a, T>(s: &'a str) -> Result<T, DeserializerError>
 where
     T: Deserialize<'a>,
 {
-    let mut iter = s.lines().peekable();
+    let mut iter = s
+        .lines()
+        .filter(|x| !x.trim().is_empty())
+        .filter(|x| !x.starts_with('#'))
+        .peekable();
     let mut lex = LexerChildren::new(iter);
     T::deserialize(&mut lex)
 }
