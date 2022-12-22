@@ -227,7 +227,7 @@ where
     where
         V: Visitor<'de>,
     {
-        todo!()
+        visitor.visit_seq(self)
     }
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
@@ -332,6 +332,29 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for LexerChildren<'
     }
 }
 
+impl<'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for LexerChildren<'de, Peekable<I>> {
+    type Error = DeserializerError;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        if self.is_finished() {
+            return Ok(None);
+        }
+        let ident = self.value()?;
+        if ident.chars().all(|x| x.is_ascii_digit()) {
+            self.increment_prefix_level();
+            let val = seed.deserialize(&mut *self);
+            self.decrement_prefix_level();
+            self.next();
+            Some(val).transpose()
+        } else {
+            Err(DeserializerError::ExpectedSequenece)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -411,5 +434,23 @@ extra=stuff";
             custom,
         };
         assert_eq!(data, expected);
+    }
+
+    #[test]
+    fn read_seq() {
+        let input = "0=0
+1=1
+10=10
+11=11
+2=2
+3=3
+4=4
+5=5
+6=6
+7=7
+8=8
+9=9";
+        let data: Vec<i64> = from_str(input).unwrap();
+        assert_eq!(data, (0..12).collect::<Vec<_>>());
     }
 }
