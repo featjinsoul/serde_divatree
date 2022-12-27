@@ -20,15 +20,26 @@ where
     let mut iter = s
         .lines()
         .filter(|x| !x.trim().is_empty())
-        .filter(|x| !x.starts_with('#'))
-        .peekable();
-    let mut lex = LexerChildren::new(iter);
+        .filter(|x| !x.starts_with('#'));
+    let mut lex = Parser::new(iter);
     T::deserialize(&mut lex)
 }
 
-impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
+struct Parser<'de, I: Iterator> {
+    iter: LexerChildren<'de, Peekable<I>>,
+    deser_any_col: bool,
+}
+
+impl<'de, I: Iterator<Item = &'de str>> Parser<'de, I> {
+    fn new(iter: I) -> Self {
+        let iter = LexerChildren::new(iter.peekable());
+        Self {
+            iter,
+            deser_any_col: false,
+        }
+    }
     fn value(&mut self) -> Result<&'de str, DeserializerError> {
-        let line = self.next();
+        let line = self.iter.next();
         let kv = line
             .and_then(KeyValue::new)
             .ok_or(DeserializerError::ExpectedValueNode)?;
@@ -41,15 +52,16 @@ impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
     }
 }
 
-impl<'a, 'de, I: Iterator<Item = &'de str>> LexerChildren<'de, Peekable<I>> {
+impl<'de, I: Iterator<Item = &'de str>> Parser<'de, I> {
     fn peek_key_value(&mut self) -> Result<KeyValue<'de>, DeserializerError> {
-        self.peek()
+        self.iter
+            .peek()
             .and_then(KeyValue::new)
             .ok_or(DeserializerError::ExpectedKeyValuePair)
     }
 }
 
-impl<'a, 'de, I: 'de> Deserializer<'de> for &'a mut LexerChildren<'de, Peekable<I>>
+impl<'a, 'de, I: 'de> Deserializer<'de> for &'a mut Parser<'de, I>
 where
     I: Iterator<Item = &'de str>,
 {
@@ -295,11 +307,11 @@ where
     where
         V: Visitor<'de>,
     {
-        self.deserialize_unit(visitor)
+        self.deserialize_any(visitor)
     }
 }
 
-impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for LexerChildren<'de, Peekable<I>> {
+impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for Parser<'de, I> {
     type Error = DeserializerError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
@@ -309,13 +321,13 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for LexerChildren<'
         println!("reading map key");
         // dbg!(self.peek());
         // dbg!(self.cache, self.prefix, self.lines.peek());
-        if self.is_finished() {
+        if self.iter.is_finished() {
             println!("------------- done ----------");
             return Ok(None);
         }
         // dbg!(self.lines.peek());
         let val = seed.deserialize(&mut *self).map(Some);
-        self.increment_prefix_level();
+        self.iter.increment_prefix_level();
         val
     }
 
@@ -324,30 +336,30 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for LexerChildren<'
         V: DeserializeSeed<'de>,
     {
         println!("reading map value");
-        // dbg!(self.next());
+        // dbg!(self.peek());
         let val = seed.deserialize(&mut *self);
-        self.decrement_prefix_level();
-        self.next();
+        self.iter.decrement_prefix_level();
+        self.iter.next();
         val
     }
 }
 
-impl<'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for LexerChildren<'de, Peekable<I>> {
+impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de, I> {
     type Error = DeserializerError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: DeserializeSeed<'de>,
     {
-        if self.is_finished() {
+        if self.iter.is_finished() {
             return Ok(None);
         }
         let ident = self.value()?;
         if ident.chars().all(|x| x.is_ascii_digit()) {
-            self.increment_prefix_level();
+            self.iter.increment_prefix_level();
             let val = seed.deserialize(&mut *self);
-            self.decrement_prefix_level();
-            self.next();
+            self.iter.decrement_prefix_level();
+            self.iter.next();
             Some(val).transpose()
         } else if ident.eq_ignore_ascii_case("length") {
             // length always comes last due to lexicographic ordering
@@ -456,5 +468,69 @@ extra=stuff";
 9=9";
         let data: Vec<i64> = from_str(input).unwrap();
         assert_eq!(data, (0..12).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn read_nested_struct() {
+        let input = "
+view_point.aspect=1.77778
+view_point.fov.type=1
+view_point.fov.value=0.93616
+view_point.fov_is_horizontal=1
+rot.x.type=0
+rot.y.type=0
+rot.z.type=0
+scale.x.type=1
+scale.x.value=1
+scale.y.type=1
+scale.y.value=1
+scale.z.type=1
+scale.z.value=1
+trans.x.type=0
+trans.y.type=0
+trans.z.type=0
+";
+        #[derive(Debug, Deserialize)]
+        struct Camera {
+            #[serde(flatten)]
+            transform: ModelTransform,
+            view_point: ViewPoint,
+        }
+        #[derive(Debug, Deserialize)]
+        struct ModelTransform {
+            trans: Vec3<KeySet>,
+            scale: Vec3<KeySet>,
+            rot: Vec3<KeySet>,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Vec3<T> {
+            x: T,
+            y: T,
+            z: T,
+        }
+        #[derive(Debug, Deserialize)]
+        struct ViewPoint {
+            aspect: f32,
+            #[serde(flatten)]
+            fov: FieldOfView,
+        }
+        #[derive(Debug, Deserialize)]
+        struct FieldOfView {
+            #[serde(rename = "fov_is_horizontal")]
+            horizontal: u8,
+            #[serde(rename = "fov")]
+            value: KeySet,
+        }
+        #[derive(Debug, Deserialize)]
+        struct KeySet {
+            #[serde(rename = "type")]
+            ty: u8,
+            #[serde(default)]
+            value: f64,
+        }
+
+        let val: Camera = from_str(input).unwrap();
+        dbg!(val);
+        panic!();
     }
 }
