@@ -32,11 +32,7 @@ impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
         let kv = line
             .and_then(KeyValue::new)
             .ok_or(DeserializerError::ExpectedValueNode)?;
-        let val = kv
-            .path()
-            .nth(0)
-            .filter(|x| !x.is_empty())
-            .unwrap_or(kv.value);
+        let val = kv.path().next().unwrap_or(kv.value);
         println!("{:?}, reading {:?}", line, val);
         Ok(val)
     }

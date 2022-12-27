@@ -30,8 +30,10 @@ impl<'a> KeyValue<'a> {
         let value = iter.next()?.trim();
         Some(Self { key, value })
     }
-    fn path(&self) -> Split<'a, char> {
-        self.key.split(Self::PATH_DELIMITER)
+    fn path(&self) -> impl Iterator<Item = &'a str> {
+        self.key
+            .split(Self::PATH_DELIMITER)
+            .filter(|x| !x.is_empty())
     }
     fn prefix(&self, level: usize) -> Option<&'a str> {
         self.prefixes().nth(level)
@@ -268,5 +270,12 @@ foobar.quux = 1
         let mut empty = KeyValue::new(" = 1").unwrap().prefixes();
         assert_eq!(empty.next(), Some(""));
         assert_eq!(empty.next(), None);
+    }
+
+    #[test]
+    fn key_value_path() {
+        let kv = KeyValue::new(" = 1").unwrap();
+
+        assert_eq!(kv.path().next(), None);
     }
 }
