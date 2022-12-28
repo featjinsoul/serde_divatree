@@ -71,17 +71,18 @@ where
     where
         V: Visitor<'de>,
     {
+        println!("calling any");
         let kv = self.peek_key_value()?;
-        if !kv.key.is_empty() {
-            if kv.key.chars().all(|x| char::is_ascii_digit(&x)) {
+        let level = kv.path().count();
+        if !self.deser_any_col && level > 0 {
+            let ident = kv.path().next().unwrap();
+            if ident.chars().all(|x| x.is_ascii_digit()) {
                 self.deserialize_seq(visitor)
             } else {
                 self.deserialize_map(visitor)
             }
         } else {
-            AtomParser(kv.value)
-                .deserialize_any(visitor)
-                .map_err(Into::into)
+            self.atom()?.deserialize_any(visitor).map_err(Into::into)
         }
     }
 
@@ -318,15 +319,17 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for Parser<'de, I> 
     where
         K: DeserializeSeed<'de>,
     {
-        println!("reading map key");
         // dbg!(self.peek());
         // dbg!(self.cache, self.prefix, self.lines.peek());
         if self.iter.is_finished() {
             println!("------------- done ----------");
             return Ok(None);
         }
+        println!("reading map key");
         // dbg!(self.lines.peek());
+        self.deser_any_col = true;
         let val = seed.deserialize(&mut *self).map(Some);
+        self.deser_any_col = false;
         self.iter.increment_prefix_level();
         val
     }
