@@ -292,7 +292,7 @@ where
     where
         V: Visitor<'de>,
     {
-        todo!()
+        visitor.visit_enum(self)
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -371,6 +371,69 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de,
         } else {
             Err(DeserializerError::ExpectedSequenece)
         }
+    }
+}
+
+impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> EnumAccess<'de> for &'a mut Parser<'de, I> {
+    type Error = DeserializerError;
+
+    type Variant = Self;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        println!("Reading variant");
+        self.deser_any_col = true;
+        let val = seed.deserialize(&mut *self);
+        self.deser_any_col = false;
+        val.map(|x| (x, self))
+    }
+}
+
+impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> VariantAccess<'de> for &'a mut Parser<'de, I> {
+    type Error = DeserializerError;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        println!("Reading unit variant");
+        Ok(())
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        println!("Reading newtype variant");
+        self.iter.increment_prefix_level();
+        let val = seed.deserialize(&mut *self);
+        self.iter.decrement_prefix_level();
+        val
+    }
+
+    fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        println!("Reading tuple variant");
+        self.iter.increment_prefix_level();
+        let val = self.deserialize_tuple(len, visitor);
+        self.iter.decrement_prefix_level();
+        val
+    }
+
+    fn struct_variant<V>(
+        self,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        println!("Reading struct variant");
+        self.iter.increment_prefix_level();
+        let val = self.deserialize_map(visitor);
+        self.iter.decrement_prefix_level();
+        val
     }
 }
 
@@ -535,5 +598,49 @@ trans.z.type=0
         let val: Camera = from_str(input).unwrap();
         dbg!(val);
         panic!();
+    }
+
+    #[test]
+    fn read_enum() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        enum Bar {
+            None,
+            Foo(u32),
+            Bar(u32, f32),
+            Baz(String),
+            Quux { foo: u32, bar: f32 },
+            Foobar(Foobar),
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Foobar {
+            foo: u32,
+            bar: f32,
+        }
+        let input = "
+0=None
+1.Foo=123
+2.Bar=(123, 3.1415)
+3.Baz=Hello World!
+4.Quux.foo=123
+4.Quux.bar=3.1415
+5.Foobar.foo=123
+5.Foobar.bar=3.1415
+";
+        let data: Vec<Bar> = from_str(input).unwrap();
+        let expected = vec![
+            Bar::None,
+            Bar::Foo(123),
+            Bar::Bar(123, 3.1415),
+            Bar::Baz("Hello World!".to_string()),
+            Bar::Quux {
+                foo: 123,
+                bar: 3.1415,
+            },
+            Bar::Foobar(Foobar {
+                foo: 123,
+                bar: 3.1415,
+            }),
+        ];
+        assert_eq!(data, expected);
     }
 }
