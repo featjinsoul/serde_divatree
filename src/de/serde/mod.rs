@@ -347,6 +347,8 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for Parser<'de, I> 
     }
 }
 
+const SEQ_ENDER: &'static [&'static str] = &["length", "num"];
+
 impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de, I> {
     type Error = DeserializerError;
 
@@ -364,7 +366,7 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de,
             self.iter.decrement_prefix_level();
             self.iter.next();
             Some(val).transpose()
-        } else if ident.eq_ignore_ascii_case("length") {
+        } else if SEQ_ENDER.iter().any(|x| ident.eq_ignore_ascii_case(x)) {
             // length always comes last due to lexicographic ordering
             // 0-9 < a-z
             Ok(None)
