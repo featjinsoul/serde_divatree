@@ -64,8 +64,8 @@ impl<'de> Deserializer<'de> for AtomParser<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.0.starts_with('(') {
-            let len = self.0.split(',').count();
+        let len = self.0.split(',').count();
+        if self.0.starts_with('(') && self.0.ends_with(')') && len > 0 {
             self.deserialize_tuple(len, visitor)
         } else if self.convert_value::<i64>().is_ok() {
             self.deserialize_i64(visitor)
