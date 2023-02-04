@@ -1,0 +1,15 @@
+on:
+  push:
+    branches:
+      - main
+      - master
+name: release-please
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: GoogleCloudPlatform/release-please-action@v3
+        with:
+          release-type: rust
+          package-name: serde_divatree
+          bump-minor-pre-major: true
