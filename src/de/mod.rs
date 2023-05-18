@@ -1,5 +1,6 @@
 use std::iter::{Peekable, Take};
 use std::num::NonZeroU8;
+use std::ops::Range;
 use std::str::{Lines, Split};
 
 pub mod serde;
@@ -16,6 +17,7 @@ struct Lexer<I> {
 struct KeyValue<'a> {
     key: &'a str,
     value: &'a str,
+    orig: &'a str,
 }
 
 impl<'a> KeyValue<'a> {
@@ -26,7 +28,19 @@ impl<'a> KeyValue<'a> {
         let mut iter = line.split(Self::KEY_VALUE_DELIMITER);
         let key = iter.next()?.trim();
         let value = iter.next()?.trim();
-        Some(Self { key, value })
+        Some(Self {
+            key,
+            value,
+            orig: line,
+        })
+    }
+    fn key_range(&self) -> Range<usize> {
+        let start = self.orig.find(self.key).unwrap();
+        start..start + self.key.len()
+    }
+    fn value_range(&self) -> Range<usize> {
+        let start = self.orig.rfind(self.value).unwrap();
+        start..start + self.value.len()
     }
     fn path(&self) -> impl Iterator<Item = &'a str> {
         self.key
@@ -82,6 +96,8 @@ struct LexerChildren<'de, I> {
     prefix_level: u8,
     /// A cached string used when changing the prefix mid iter
     cache: Option<&'de str>,
+    /// The range of child in bytes since the beginning of the file including newlines
+    byte_offset: Range<usize>,
 }
 
 impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
@@ -91,6 +107,7 @@ impl<'de, I: Iterator<Item = &'de str>> LexerChildren<'de, I> {
             prefix: None,
             prefix_level: 0,
             cache: None,
+            byte_offset: Range::default(),
         }
     }
 
@@ -149,11 +166,15 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let line = if self.cache.is_none() || self.prefix.is_some() {
-            self.lines.next()
+            let line = self.lines.next();
+            self.byte_offset.start = self.byte_offset.end;
+            self.byte_offset.end += line.unwrap_or_default().len() + 1;
+            line
         } else {
             self.cache
         }?;
         self.prefix = self.prefix.or_else(|| self.get_prefix(line));
+        self.byte_offset.start += self.prefix.unwrap_or_default().len();
         self.cache = Some(line);
         let stripped = line.strip_prefix(self.prefix?);
         stripped
@@ -227,27 +248,23 @@ foobar.quux = 1
 
     #[test]
     fn key_value_new() {
-        assert_eq!(
-            KeyValue::new(" foo.bar = baz "),
-            Some(KeyValue {
-                key: "foo.bar",
-                value: "baz"
-            })
-        );
-        assert_eq!(
-            KeyValue::new("= baz "),
-            Some(KeyValue {
-                key: "",
-                value: "baz"
-            })
-        );
-        assert_eq!(
-            KeyValue::new(" bar = "),
-            Some(KeyValue {
-                key: "bar",
-                value: ""
-            })
-        );
+        let kv = KeyValue::new(" foo.bar = baz ").unwrap();
+        assert_eq!(kv.key, "foo.bar");
+        assert_eq!(kv.orig.get(kv.key_range()), Some(kv.key));
+        assert_eq!(kv.value, "baz");
+        assert_eq!(kv.orig.get(kv.value_range()), Some(kv.value));
+
+        let kv = KeyValue::new("= baz ").unwrap();
+        assert_eq!(kv.key, "");
+        assert_eq!(kv.orig.get(kv.key_range()), Some(kv.key));
+        assert_eq!(kv.value, "baz");
+        assert_eq!(kv.orig.get(kv.value_range()), Some(kv.value));
+
+        let kv = KeyValue::new(" bar = ").unwrap();
+        assert_eq!(kv.key, "bar");
+        assert_eq!(kv.orig.get(kv.key_range()), Some(kv.key));
+        assert_eq!(kv.value, "");
+        assert_eq!(kv.orig.get(kv.value_range()), Some(kv.value));
     }
 
     #[test]
@@ -275,5 +292,24 @@ foobar.quux = 1
         let kv = KeyValue::new(" = 1").unwrap();
 
         assert_eq!(kv.path().next(), None);
+    }
+
+    #[test]
+    fn byte_offset() {
+        const INPUT: &'static str = "foo.bar.baz = 1
+foo.bar.quux = 1
+test = 1
+";
+        let mut iter = LexerChildren::new(INPUT.lines());
+        assert_eq!(iter.byte_offset, 0..0);
+        iter.next();
+        assert_eq!(iter.byte_offset, 0..16);
+        assert_eq!(&INPUT[iter.byte_offset.clone()], "foo.bar.baz = 1\n");
+        iter.next();
+        assert_eq!(iter.byte_offset, 16..33);
+        assert_eq!(&INPUT[iter.byte_offset.clone()], "foo.bar.quux = 1\n");
+        iter.next();
+        assert_eq!(iter.byte_offset, 33..42);
+        assert_eq!(&INPUT[iter.byte_offset.clone()], "test = 1\n");
     }
 }

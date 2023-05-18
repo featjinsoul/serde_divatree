@@ -39,17 +39,30 @@ impl<'de, I: Iterator<Item = &'de str>> Parser<'de, I> {
             deser_any_col: false,
         }
     }
-    fn value(&mut self) -> Result<&'de str, DeserializerError> {
-        let line = self.iter.next();
-        let kv = line
-            .and_then(KeyValue::new)
+    fn key_value(&mut self) -> Option<KeyValue<'de>> {
+        self.iter.next().and_then(KeyValue::new)
+    }
+    fn value(&mut self) -> Result<(&'de str, Range<usize>), DeserializerError> {
+        let kv = self
+            .key_value()
             .ok_or(DeserializerError::ExpectedValueNode)?;
         let val = kv.path().next().unwrap_or(kv.value);
-        trace!("{:?}, reading {:?}", line, val);
-        Ok(val)
+        // SAFETY: `val` comes from `kv.orig`
+        let value_start =
+            val.as_ptr() as usize - kv.orig.as_ptr() as usize + self.iter.byte_offset.start;
+        let range = value_start..value_start + val.len();
+        trace!(
+            "{:?}[{:?}] = {:?}",
+            kv.orig,
+            range,
+            kv.orig.get(range.clone())
+        );
+        trace!("{:?}, reading {:?}", kv.orig, val);
+        Ok((val, range))
     }
     fn atom(&mut self) -> Result<AtomParser<'de>, DeserializerError> {
-        self.value().map(AtomParser)
+        let (input, span) = self.value()?;
+        Ok(AtomParser { input, span })
     }
 }
 
@@ -360,7 +373,7 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de,
         if self.iter.is_finished() {
             return Ok(None);
         }
-        let ident = self.value()?;
+        let (ident, _) = self.value()?;
         if ident.chars().all(|x| x.is_ascii_digit()) {
             self.iter.increment_prefix_level();
             let val = seed.deserialize(&mut *self);
