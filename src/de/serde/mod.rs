@@ -25,13 +25,13 @@ where
     T::deserialize(&mut lex)
 }
 
-struct Parser<'de, I: Iterator> {
+pub(crate) struct Parser<'de, I: Iterator> {
     iter: LexerChildren<'de, Peekable<I>>,
     deser_any_col: bool,
 }
 
 impl<'de, I: Iterator<Item = &'de str>> Parser<'de, I> {
-    fn new(iter: I) -> Self {
+    pub(crate) fn new(iter: I) -> Self {
         let iter = LexerChildren::new(iter.peekable());
         Self {
             iter,

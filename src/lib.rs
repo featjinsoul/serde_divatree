@@ -1,5 +1,7 @@
 pub mod de;
 pub mod error;
+#[cfg(feature = "pyo3")]
+mod py_ffi;
 pub mod ser;
 
 pub use de::*;
