@@ -572,38 +572,38 @@ trans.x.type=0
 trans.y.type=0
 trans.z.type=0
 ";
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug, PartialEq, Deserialize)]
         struct Camera {
             #[serde(flatten)]
             transform: ModelTransform,
             view_point: ViewPoint,
         }
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug, PartialEq, Deserialize)]
         struct ModelTransform {
             trans: Vec3<KeySet>,
             scale: Vec3<KeySet>,
             rot: Vec3<KeySet>,
         }
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug, PartialEq, Deserialize)]
         struct Vec3<T> {
             x: T,
             y: T,
             z: T,
         }
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug, PartialEq, Deserialize)]
         struct ViewPoint {
             aspect: f32,
             #[serde(flatten)]
             fov: FieldOfView,
         }
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug, PartialEq, Deserialize)]
         struct FieldOfView {
             #[serde(rename = "fov_is_horizontal")]
             horizontal: u8,
             #[serde(rename = "fov")]
             value: KeySet,
         }
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug, PartialEq, Deserialize)]
         struct KeySet {
             #[serde(rename = "type")]
             ty: u8,
@@ -612,8 +612,37 @@ trans.z.type=0
         }
 
         let val: Camera = from_str(input).unwrap();
-        dbg!(val);
-        panic!();
+        let expected = Camera {
+            transform: ModelTransform {
+                trans: Vec3 {
+                    x: KeySet { ty: 0, value: 0.0 },
+                    y: KeySet { ty: 0, value: 0.0 },
+                    z: KeySet { ty: 0, value: 0.0 },
+                },
+                scale: Vec3 {
+                    x: KeySet { ty: 1, value: 1.0 },
+                    y: KeySet { ty: 1, value: 1.0 },
+                    z: KeySet { ty: 1, value: 1.0 },
+                },
+                rot: Vec3 {
+                    x: KeySet { ty: 0, value: 0.0 },
+                    y: KeySet { ty: 0, value: 0.0 },
+                    z: KeySet { ty: 0, value: 0.0 },
+                },
+            },
+            view_point: ViewPoint {
+                aspect: 1.77778,
+                fov: FieldOfView {
+                    horizontal: 1,
+                    value: KeySet {
+                        ty: 1,
+                        value: 0.93616,
+                    },
+                },
+            },
+        };
+        dbg!(&val);
+        assert_eq!(val, expected);
     }
 
     #[test]
