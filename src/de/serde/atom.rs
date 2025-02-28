@@ -67,13 +67,15 @@ pub enum ParseAtomError {
         #[cfg_attr(feature = "miette", label("Tuple should end here"))]
         expected_end: Range<usize>,
     },
-    #[error("{0}")]
-    Custom(String),
+    #[error("A custom error has occured; See tracing logs.")]
+    Custom,
 }
 
 impl serde::de::Error for ParseAtomError {
     fn custom<T: Display>(msg: T) -> Self {
-        Self::Custom(msg.to_string())
+        #[cfg(feature="tracing")]
+        tracing::error!(err=tracing::field::display(msg));
+        Self::Custom
     }
 }
 
