@@ -382,7 +382,7 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de,
         if self.iter.is_finished() {
             return Ok(None);
         }
-        let (ident, _) = self.value()?;
+        let (ident, span) = self.value()?;
         if ident.chars().all(|x| x.is_ascii_digit()) {
             self.iter.increment_prefix_level();
             let val = seed.deserialize(&mut *self);
@@ -394,7 +394,7 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de,
             // 0-9 < a-z
             Ok(None)
         } else {
-            Err(DeserializerError::ExpectedSequenece)
+            Err(DeserializerError::ExpectedSequenece { unexpected: span })
         }
     }
 }
