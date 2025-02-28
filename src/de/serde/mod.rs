@@ -4,7 +4,6 @@ use serde::de::{
 };
 use serde::Deserializer;
 
-use log::{debug, trace};
 use std::iter::{Peekable, Take};
 use std::num::{ParseFloatError, ParseIntError};
 use std::ops::Range;
@@ -30,7 +29,8 @@ where
         .map(|x| x.len() + 1)
         .sum();
     let mut lex = Parser::new(iter);
-    log::warn!("Setting start to: {}", start);
+    #[cfg(feature="tracing")]
+    tracing::info!("Setting start to: {}", start);
     lex.iter.byte_offset = start..start;
     T::deserialize(&mut lex)
 }
@@ -60,13 +60,13 @@ impl<'de, I: Iterator<Item = &'de str>> Parser<'de, I> {
         let value_start =
             val.as_ptr() as usize - kv.orig.as_ptr() as usize + self.iter.byte_offset.start;
         let range = value_start..value_start + val.len();
-        trace!(
-            "{:?}[{:?}] = {:?}",
-            kv.orig,
-            range,
-            kv.orig.get(range.clone())
+        #[cfg(feature="tracing")]
+        tracing::trace!(
+            full=kv.orig,
+            range=tracing::field::debug(&range),
+            slice=kv.orig.get(range.clone()),
+            value=val
         );
-        trace!("{:?}, reading {:?}", kv.orig, val);
         Ok((val, range))
     }
     fn atom(&mut self) -> Result<AtomParser<'de>, DeserializerError> {
@@ -90,11 +90,11 @@ where
 {
     type Error = DeserializerError;
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, visitor)))]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        debug!("calling any");
         let kv = self.peek_key_value()?;
         let level = kv.path().count();
         if !self.deser_any_col && level > 0 {
@@ -137,6 +137,7 @@ where
         self.atom()?.deserialize_i32(visitor).map_err(Into::into)
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, visitor)))]
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
@@ -259,6 +260,7 @@ where
         visitor.visit_newtype_struct(self)
     }
 
+    #[cfg_attr(feature="tracing", tracing::instrument(skip(self, visitor)))]
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
@@ -338,17 +340,18 @@ where
 impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for Parser<'de, I> {
     type Error = DeserializerError;
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, seed)))]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: DeserializeSeed<'de>,
     {
-        // dbg!(self.peek());
-        // dbg!(self.cache, self.prefix, self.lines.peek());
+        #[cfg(feature="tracing")]
+        tracing::debug!(prev=self.iter.cache, cur=self.iter.lines.peek(), prefix=self.iter.prefix);
         if self.iter.is_finished() {
-            trace!("------------- done ----------");
+            #[cfg(feature="tracing")]
+            tracing::trace!("------------- done ----------");
             return Ok(None);
         }
-        debug!("reading map key");
         // dbg!(self.lines.peek());
         self.deser_any_col = true;
         let val = seed.deserialize(&mut *self).map(Some);
@@ -357,12 +360,11 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for Parser<'de, I> 
         val
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, seed)))]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: DeserializeSeed<'de>,
     {
-        debug!("reading map value");
-        // dbg!(self.peek());
         let val = seed.deserialize(&mut *self);
         self.iter.decrement_prefix_level();
         self.iter.next();
@@ -375,6 +377,7 @@ const SEQ_ENDER: &'static [&'static str] = &["length", "num"];
 impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de, I> {
     type Error = DeserializerError;
 
+    #[cfg_attr(feature="tracing", tracing::instrument(skip(self, seed)))]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: DeserializeSeed<'de>,
@@ -404,11 +407,11 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> EnumAccess<'de> for &'a mut Pa
 
     type Variant = Self;
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, seed)))]
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
     where
         V: DeserializeSeed<'de>,
     {
-        debug!("Reading variant");
         self.deser_any_col = true;
         let val = seed.deserialize(&mut *self);
         self.deser_any_col = false;
@@ -419,33 +422,34 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> EnumAccess<'de> for &'a mut Pa
 impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> VariantAccess<'de> for &'a mut Parser<'de, I> {
     type Error = DeserializerError;
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     fn unit_variant(self) -> Result<(), Self::Error> {
-        debug!("Reading unit variant");
         Ok(())
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, seed)))]
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
     where
         T: DeserializeSeed<'de>,
     {
-        debug!("Reading newtype variant");
         self.iter.increment_prefix_level();
         let val = seed.deserialize(&mut *self);
         self.iter.decrement_prefix_level();
         val
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, visitor)))]
     fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        debug!("Reading tuple variant");
         self.iter.increment_prefix_level();
         let val = self.deserialize_tuple(len, visitor);
         self.iter.decrement_prefix_level();
         val
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, visitor)))]
     fn struct_variant<V>(
         self,
         fields: &'static [&'static str],
@@ -454,7 +458,6 @@ impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> VariantAccess<'de> for &'a mut
     where
         V: Visitor<'de>,
     {
-        debug!("Reading struct variant");
         self.iter.increment_prefix_level();
         let val = self.deserialize_map(visitor);
         self.iter.decrement_prefix_level();
@@ -467,6 +470,7 @@ mod tests {
     use std::collections::HashMap;
 
     use serde_derive::Deserialize;
+    use test_log::test;
 
     use super::*;
 
@@ -621,6 +625,8 @@ trans.z.type=0
         }
 
         let val: Camera = from_str(input).unwrap();
+        #[cfg(feature="tracing")]
+        tracing::debug!(value=tracing::field::debug(&val));
         let expected = Camera {
             transform: ModelTransform {
                 trans: Vec3 {
@@ -650,7 +656,6 @@ trans.z.type=0
                 },
             },
         };
-        dbg!(&val);
         assert_eq!(val, expected);
     }
 

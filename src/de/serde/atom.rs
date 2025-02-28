@@ -90,6 +90,7 @@ impl<'de> AtomParser<'de> {
 impl<'de> Deserializer<'de> for AtomParser<'de> {
     type Error = ParseAtomError;
 
+    #[cfg_attr(feature="tracing", tracing::instrument(skip(self, visitor)))]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
