@@ -1,14 +1,16 @@
-use ::serde::de::{
+use serde::de::{
     self, Deserialize, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
     VariantAccess, Visitor,
 };
-use ::serde::Deserializer;
+use serde::Deserializer;
 
 use log::{debug, trace};
+use std::iter::{Peekable, Take};
 use std::num::{ParseFloatError, ParseIntError};
+use std::ops::Range;
 use std::str::FromStr;
 
-use super::*;
+use super::{KeyValue, LexerChildren};
 use crate::error::DeserializerError;
 use crate::serde::atom::AtomParser;
 
@@ -22,7 +24,14 @@ where
         .lines()
         .filter(|x| !x.trim().is_empty())
         .filter(|x| !x.starts_with('#'));
+    let start = s
+        .lines()
+        .take_while(|x| x.starts_with('#') || x.is_empty())
+        .map(|x| x.len() + 1)
+        .sum();
     let mut lex = Parser::new(iter);
+    log::warn!("Setting start to: {}", start);
+    lex.iter.byte_offset = start..start;
     T::deserialize(&mut lex)
 }
 
