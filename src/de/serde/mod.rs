@@ -29,7 +29,7 @@ where
         .map(|x| x.len() + 1)
         .sum();
     let mut lex = Parser::new(iter);
-    #[cfg(feature="tracing")]
+    #[cfg(feature = "tracing")]
     tracing::info!("Setting start to: {}", start);
     lex.iter.byte_offset = start..start;
     T::deserialize(&mut lex)
@@ -60,12 +60,12 @@ impl<'de, I: Iterator<Item = &'de str>> Parser<'de, I> {
         let value_start =
             val.as_ptr() as usize - kv.orig.as_ptr() as usize + self.iter.byte_offset.start;
         let range = value_start..value_start + val.len();
-        #[cfg(feature="tracing")]
+        #[cfg(feature = "tracing")]
         tracing::trace!(
-            full=kv.orig,
-            range=tracing::field::debug(&range),
-            slice=kv.orig.get(range.clone()),
-            value=val
+            full = kv.orig,
+            range = tracing::field::debug(&range),
+            slice = kv.orig.get(range.clone()),
+            value = val
         );
         Ok((val, range))
     }
@@ -260,12 +260,12 @@ where
         visitor.visit_newtype_struct(self)
     }
 
-    #[cfg_attr(feature="tracing", tracing::instrument(skip(self, visitor)))]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, visitor)))]
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_seq(self)
+        visitor.visit_seq(SeqParser::new(self))
     }
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
@@ -345,10 +345,14 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for Parser<'de, I> 
     where
         K: DeserializeSeed<'de>,
     {
-        #[cfg(feature="tracing")]
-        tracing::debug!(prev=self.iter.cache, cur=self.iter.lines.peek(), prefix=self.iter.prefix);
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            prev = self.iter.cache,
+            cur = self.iter.lines.peek(),
+            prefix = self.iter.prefix
+        );
         if self.iter.is_finished() {
-            #[cfg(feature="tracing")]
+            #[cfg(feature = "tracing")]
             tracing::trace!("------------- done ----------");
             return Ok(None);
         }
@@ -374,30 +378,163 @@ impl<'de, I: Iterator<Item = &'de str> + 'de> MapAccess<'de> for Parser<'de, I> 
 
 const SEQ_ENDER: &'static [&'static str] = &["length", "num"];
 
-impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for Parser<'de, I> {
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+pub struct SeqParser<'a, 'de, I: Iterator<Item = &'de str>> {
+    /// Original parser
+    de: &'a mut Parser<'de, I>,
+    #[cfg(feature = "alloc")]
+    /// The cached lines read after figuring out the length of seq.
+    read_lines: alloc::vec::Vec<&'de str>,
+    #[cfg(feature = "alloc")]
+    /// The cached lines read after figuring out the length of seq.
+    read_lines_iter: Option<Parser<'de, alloc::vec::IntoIter<&'de str>>>,
+    #[cfg(feature = "alloc")]
+    /// The seen indices so far.
+    read_indices: alloc::collections::BTreeSet<i64>,
+    /// The read length if found
+    read_length: Option<i64>,
+    // The next sequence index expected to be read
+    index: i64,
+}
+
+impl<'a, 'de, I: Iterator<Item = &'de str>> SeqParser<'a, 'de, I> {
+    fn new(de: &'a mut Parser<'de, I>) -> Self {
+        Self {
+            de,
+            index: 0,
+            #[cfg(feature = "alloc")]
+            read_lines: Vec::new(),
+            #[cfg(feature = "alloc")]
+            read_lines_iter: None,
+            #[cfg(feature = "alloc")]
+            read_indices: alloc::collections::BTreeSet::new(),
+            read_length: None,
+        }
+    }
+}
+
+impl<'a, 'de, I: Iterator<Item = &'de str> + 'de> SeqAccess<'de> for SeqParser<'a, 'de, I> {
     type Error = DeserializerError;
 
-    #[cfg_attr(feature="tracing", tracing::instrument(skip(self, seed)))]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, seed)))]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: DeserializeSeed<'de>,
     {
-        if self.iter.is_finished() {
+        if self.de.iter.is_finished() {
             return Ok(None);
         }
-        let (ident, span) = self.value()?;
-        if ident.chars().all(|x| x.is_ascii_digit()) {
-            self.iter.increment_prefix_level();
-            let val = seed.deserialize(&mut *self);
-            self.iter.decrement_prefix_level();
-            self.iter.next();
-            Some(val).transpose()
-        } else if SEQ_ENDER.iter().any(|x| ident.eq_ignore_ascii_case(x)) {
-            // length always comes last due to lexicographic ordering
-            // 0-9 < a-z
-            Ok(None)
-        } else {
-            Err(DeserializerError::ExpectedSequenece { unexpected: span })
+        #[cfg(not(feature = "alloc"))]
+        {
+            let (ident, span) = self.de.value()?;
+            if ident.chars().all(|x| x.is_ascii_digit()) {
+                self.de.iter.increment_prefix_level();
+                let val = seed.deserialize(&mut *self.de);
+                self.de.iter.decrement_prefix_level();
+                self.de.iter.next();
+                Some(val).transpose()
+            } else if SEQ_ENDER.iter().any(|x| ident.eq_ignore_ascii_case(x)) {
+                // length always comes last due to lexicographic ordering
+                // 0-9 < a-z
+                Ok(None)
+            } else {
+                Err(DeserializerError::ExpectedSequenece { unexpected: span })
+            }
+        }
+        #[cfg(feature = "alloc")]
+        {
+            // HACK: This code sucks
+
+            #[cfg(feature = "tracing")]
+            tracing::debug!(
+                index = self.index,
+                length = self.read_length,
+                values = tracing::field::debug(&self.read_indices)
+            );
+
+            while !self.de.iter.is_finished() {
+                if let Some(str) = self.de.iter.peek() {
+                    self.read_lines.push(str);
+                }
+                let (ident, span) = self.de.value()?;
+                #[cfg(feature = "tracing")]
+                tracing::debug!(
+                    ident = ident,
+                    span = tracing::field::debug(&span),
+                    "Initial length read."
+                );
+
+                if ident.chars().all(|x| x.is_ascii_digit()) {
+                    let ident = ident.parse::<i64>().unwrap();
+                    self.read_indices.insert(ident);
+                } else if SEQ_ENDER.iter().any(|x| ident.eq_ignore_ascii_case(x)) {
+                    self.de.iter.increment_prefix_level();
+                    let marker = std::marker::PhantomData::<i64>;
+                    self.read_length = marker.deserialize(&mut *self.de).ok();
+                    self.de.iter.decrement_prefix_level();
+                    break;
+                } else {
+                    tracing::error!(ident=ident, "Got something unexpected.");
+                    return Err(DeserializerError::ExpectedSequenece { unexpected: span });
+                }
+            }
+
+            // TODO: get rid of this clone
+            let mut lookup = Parser::new(self.read_lines.clone().into_iter());
+            if !self.read_indices.contains(&self.index)
+                || self
+                    .read_length
+                    .map(|x| self.index >= x)
+                    .unwrap_or_default()
+            {
+                self.index = 0;
+                loop {
+                    if lookup.iter.is_finished() {
+                        break;
+                    }
+                    let (ident, span) = lookup.value()?;
+
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(ident= ident,  "Final read.");
+
+                    if ident.chars().all(|x| x.is_ascii_digit()) {
+                        continue;
+                    } else if SEQ_ENDER.iter().any(|x| ident.eq_ignore_ascii_case(x)) {
+                        break;
+                    } else {
+                        // HACK: get the actual span from the outer parser
+                        return Err(DeserializerError::ExpectedSequenece { unexpected: span });
+                    }
+                }
+                Ok(None)
+            } else {
+                let mut value = None;
+                while value.is_none() {
+                    if lookup.iter.is_finished() {
+                        break;
+                    }
+                    let (ident, _span) = lookup.value()?;
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(ident= ident,  "Reading value.");
+
+                    if ident.chars().all(|x| x.is_ascii_digit()) {
+                        let ident = ident.parse::<i64>().unwrap();
+                        if ident == self.index {
+                            lookup.iter.increment_prefix_level();
+                            value = Some(seed.deserialize(&mut lookup));
+                            lookup.iter.decrement_prefix_level();
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                self.index += 1;
+                value.transpose()
+            }
         }
     }
 }
@@ -560,7 +697,8 @@ extra=stuff";
 6=6
 7=7
 8=8
-9=9";
+9=9
+length=12";
         let data: Vec<i64> = from_str(input).unwrap();
         assert_eq!(data, (0..12).collect::<Vec<_>>());
     }
@@ -625,8 +763,8 @@ trans.z.type=0
         }
 
         let val: Camera = from_str(input).unwrap();
-        #[cfg(feature="tracing")]
-        tracing::debug!(value=tracing::field::debug(&val));
+        #[cfg(feature = "tracing")]
+        tracing::debug!(value = tracing::field::debug(&val));
         let expected = Camera {
             transform: ModelTransform {
                 trans: Vec3 {
@@ -684,6 +822,7 @@ trans.z.type=0
 4.Quux.bar=3.1415
 5.Foobar.foo=123
 5.Foobar.bar=3.1415
+length=6
 ";
         let data: Vec<Bar> = from_str(input).unwrap();
         let expected = vec![
