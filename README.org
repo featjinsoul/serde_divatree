@@ -1,0 +1,13 @@
+* =serde_divatree=
+A [[serde.rs][=serde=]] library for reading SEGA-flavored, specifically Project DIVA, [[https://docs.oracle.com/javase/7/docs/api/java/util/Properties.html][Java/Canonical Properties]].
+
+** Format
+SEGA's format seems to be loosely based on [[https://github.com/FasterXML/jackson-dataformats-text/tree/master/properties][Jackson's version of properties]] with the following differences:
+- Array indices start from =0= instead of =1=.
+- Hardcoded key-value seperator to ===.
+- No support for multiline key-value pairs. e.g.
+  #+begin_example
+     fruits =                         apple, banana, pear, \
+                                      cantaloupe, watermelon, \
+                                      kiwi, mango
+  #+end_example
