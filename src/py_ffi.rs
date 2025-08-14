@@ -65,7 +65,7 @@ fn write<'de>(obj: &'de PyAny) -> PyResult<String> {
 /// 'version': 0}
 /// ```
 #[pymodule]
-fn divatree(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn serde_divatree(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     // m.add_wrapped(wrap_pyfunction!(object_set))?;
     m.add_wrapped(wrap_pyfunction!(read))?;
     m.add_wrapped(wrap_pyfunction!(write))?;

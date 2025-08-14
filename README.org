@@ -1,5 +1,5 @@
-* =serde_divatree=
-A [[serde.rs][=serde=]] library for reading SEGA-flavored, specifically Project DIVA, [[https://docs.oracle.com/javase/7/docs/api/java/util/Properties.html][Java/Canonical Properties]].
+* serde_divatree
+A [[https://serde.rs/][serde.rs]] library for reading SEGA-flavored, specifically Project DIVA, [[https://docs.oracle.com/javase/7/docs/api/java/util/Properties.html][Java/Canonical Properties]].
 
 ** Format
 SEGA's format seems to be loosely based on [[https://github.com/FasterXML/jackson-dataformats-text/tree/master/properties][Jackson's version of properties]] with the following differences:
@@ -11,3 +11,39 @@ SEGA's format seems to be loosely based on [[https://github.com/FasterXML/jackso
                                       cantaloupe, watermelon, \
                                       kiwi, mango
   #+end_example
+  
+** Building
+Python FFI support is merged from [[https://github.com/diva-rust-modding/serde_divatree/tree/pyo3][this branch]]. 
+
+To build the project itself (regardless of Python FFi), you need [[https://doc.rust-lang.org/cargo/getting-started/installation.html][Cargo]].
+Pull the latest release from GitHub:
+#+
+git clone https://github.com/featjinsoul/serde_divatree.git
+#+
+Build the project:
+#+
+cargo build --release
+#+
+
+To build wheels to use the Python FFI, you need [[https://www.maturin.rs/installation.html][maturin]].
+To build the wheels:
+#+
+maturin build --release
+#+
+
+** Python FFI Examples
+
++#BEGIN_SRC python
+>>> import serde_divatree as divatree
+
+>>> file = open("./assets/pv_db.txt").read()
+>>> pv_db = divatree.read(file)
+
+>>> pv_db["pv_999"]["difficulty"]["normal"][0]
+{'edition': 0,
+'level': 'PV_LV_01_0',
+'level_sort_index': 0,
+'script_file_name': 'rom/script/pv_999_normal.dsc',
+'script_format': '0x14012316',
+'version': 0}
++#END_SRC
