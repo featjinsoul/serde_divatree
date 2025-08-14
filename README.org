@@ -17,33 +17,28 @@ Python FFI support is merged from [[https://github.com/diva-rust-modding/serde_d
 
 To build the project itself (regardless of Python FFi), you need [[https://doc.rust-lang.org/cargo/getting-started/installation.html][Cargo]].
 Pull the latest release from GitHub:
-#+
-git clone https://github.com/featjinsoul/serde_divatree.git
-#+
+: git clone https://github.com/featjinsoul/serde_divatree.git
+
 Build the project:
-#+
-cargo build --release
-#+
+: cargo build --release
 
 To build wheels to use the Python FFI, you need [[https://www.maturin.rs/installation.html][maturin]].
 To build the wheels:
-#+
-maturin build --release
-#+
+: maturin build --release
 
-** Python FFI Examples
+** Python FFI Example
+Reads the object in `s` from its `CanonicalPath` form.
+: >>> import serde_divatree as divatree
 
-+#BEGIN_SRC python
->>> import serde_divatree as divatree
+: >>> file = open("./assets/pv_db.txt").read()
+: >>> pv_db = divatree.read(file)
 
->>> file = open("./assets/pv_db.txt").read()
->>> pv_db = divatree.read(file)
+: >>> pv_db["pv_999"]["difficulty"]["normal"][0]
+: {'edition': 0,
+: 'level': 'PV_LV_01_0',
+: 'level_sort_index': 0,
+: 'script_file_name': 'rom/script/pv_999_normal.dsc',
+: 'script_format': '0x14012316',
+: 'version': 0}
 
->>> pv_db["pv_999"]["difficulty"]["normal"][0]
-{'edition': 0,
-'level': 'PV_LV_01_0',
-'level_sort_index': 0,
-'script_file_name': 'rom/script/pv_999_normal.dsc',
-'script_format': '0x14012316',
-'version': 0}
-+#END_SRC
+
